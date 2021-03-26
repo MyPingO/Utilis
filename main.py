@@ -60,17 +60,18 @@ async def on_ready():
 
 @client.event
 async def on_message(msg: discord.Message):
-    if msg.content.startswith(bot_prefix) or starts_with_mention(msg.content):
-        clean_content = remove_prefix(msg.content)
-        command = get_command(clean_content)
+    if msg.author != client.user:
+        if msg.content.startswith(bot_prefix) or starts_with_mention(msg.content):
+            clean_content = remove_prefix(msg.content)
+            command = get_command(clean_content)
 
-        if not command:
-            await bot_commands.call("help", msg, "")
-        elif bot_commands.has_command(command):
-            args = get_args(clean_content, command)
-            await bot_commands.call(command, msg, args)
-        else:
-            await msg.channel.send(f"No command `{command}`.", delete_after=7)
+            if not command:
+                await bot_commands.call("help", msg, "")
+            elif bot_commands.has_command(command):
+                args = get_args(clean_content, command)
+                await bot_commands.call(command, msg, args)
+            else:
+                await msg.channel.send(f"No command `{command}`.", delete_after=7)
 
 
 def start_bot() -> None:
