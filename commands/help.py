@@ -6,9 +6,9 @@ import discord
 class Help_Command(Bot_Command):
     name = "help"
 
-    short_help = "Gives information about the bot's methods."
+    short_help = "Gives information about the bot's commands. Specifying what command you need help with by doing `$help (command)` will show you more details about that command"
 
-    long_help = """Gives information about the bot's methods.
+    long_help = """Gives information about the bot's commands.
     Arguments:
     `command`
     `None`
