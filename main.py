@@ -6,12 +6,28 @@ from cmd import bot_commands
 
 bot_prefix = "!"
 
-def remove_prefix(content: str) -> str:
-    """Removes the bot prefix from the start of a string.
-    Assumes that the string starts the bot prefix.
+
+def starts_with_mention(content: str) -> bool:
+    """Returns whether or not the bot was mentioned at the start of the
+    message.
     """
 
-    return content[len(bot_prefix) :]
+    return content.startswith(client.user.mention) or content.startswith(
+        f"<@!{client.user.id}>"
+    )
+
+
+def remove_prefix(content: str) -> str:
+    """Removes the bot prefix or bot's mention string from the start of a
+    string.
+    """
+
+    if content.startswith(bot_prefix):
+        return content[len(bot_prefix) :].strip()
+    elif starts_with_mention(content):
+        return content[content.index(">") + 1 :].strip()
+    else:
+        raise ValueError(f"String '{content}' does not start with the bot's prefix.")
 
 
 def get_command(content: str) -> str:
@@ -19,10 +35,10 @@ def get_command(content: str) -> str:
     Assumes that the bot prefix has been removed.
     """
 
-    if " " in content.strip():
-        return content.strip().split(" ")[0]
+    if " " in content:
+        return content.split(" ")[0].casefold()
     else:
-        return content.strip()
+        return content.casefold()
 
 
 def get_args(content: str, command: str) -> str:
@@ -44,11 +60,13 @@ async def on_ready():
 
 @client.event
 async def on_message(msg: discord.Message):
-    if msg.content.startswith(bot_prefix):
+    if msg.content.startswith(bot_prefix) or starts_with_mention(msg.content):
         clean_content = remove_prefix(msg.content)
         command = get_command(clean_content)
 
-        if bot_commands.has_command(command):
+        if not command:
+            await bot_commands.call("help", msg, "")
+        elif bot_commands.has_command(command):
             args = get_args(clean_content, command)
             await bot_commands.call(command, msg, args)
         else:

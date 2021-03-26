@@ -44,11 +44,11 @@ class Bot_Commands:
 
     Attributes
     ------------
-    commands: dict[:class:`str`, :class:`Bot_Command`]
+    commands: dict[`str`, `Bot_Command`]
     A dictionary of all possible commands names that the bot can run and their
     corresponding commands.
 
-    unique_commands: dict[:class:`str`, :class:`Bot_Command`]
+    unique_commands: dict[`str`, `Bot_Command`]
     A dictionary of all commands the bot can run, without any aliases.
     """
 
@@ -61,6 +61,7 @@ class Bot_Commands:
 
         print("Loading commands.")
         for file in path.iterdir():
+            # Don't load files or directories that start with an underscore
             if file.name[0] != "_":
                 if file.is_dir():
                     print(f"{' '*indent}Loading module '{file.name}'.")
@@ -79,7 +80,7 @@ class Bot_Commands:
         of a subclass of `Bot_Command`.
         """
 
-        module_name = f"{path.parent.as_posix().replace('/', '.')}.{path.name[:-len(path.suffix)]}"
+        module_name = path.as_posix()[: -len(path.suffix)].replace('/', '.')
         print(f"{' '*indent}Loading {module_name}")
 
         c = import_module(module_name)
@@ -95,15 +96,17 @@ class Bot_Commands:
         if not command.name:
             raise ValueError("Tried to add command with no name.")
 
-        if command.name not in self.unique_commands:
-            self.commands[command.name] = command
-            self.unique_commands[command.name] = command
+        lower_cmd_name = command.name.casefold()
+
+        if lower_cmd_name not in self.unique_commands:
+            self.commands[lower_cmd_name] = command
+            self.unique_commands[lower_cmd_name] = command
         else:
             raise ValueError(
-                f"Tried to add command '{command.name}' but command '{self.commands[command.name].name}' already had alias '{command.name}'."
+                f"Tried to add command '{command.name}' but command '{self.commands[lower_cmd_name].name}' already had alias '{lower_cmd_name}'."
             )
 
-        for alias in command.aliases:
+        for alias in [a.casefold() for a in command.aliases]:
             if alias not in self.commands:
                 self.commands[alias] = command
             else:
@@ -127,8 +130,8 @@ class Bot_Commands:
                     await msg.channel.send(
                         f"Error executing `{command}`.", delete_after=7
                     )
-                except Exception as e:
-                    print(e)
+                except Exception as e2:
+                    print(e2)
 
 
 bot_commands = Bot_Commands()

@@ -16,8 +16,9 @@ class Help_Command(Bot_Command):
 
     async def run(self, msg: discord.Message, args: str):
         if args:
-            if bot_commands.has_command(args):
-                cmd = bot_commands.get_command(args)
+            cmd_name = args.casefold()
+            if bot_commands.has_command(cmd_name):
+                cmd = bot_commands.get_command(cmd_name)
 
                 help_output = f"__**{cmd.name}**__\n"
 
@@ -31,7 +32,9 @@ class Help_Command(Bot_Command):
                 help_output += cmd.long_help
                 await msg.channel.send(help_output)
             else:
-                await msg.channel.send(f"Could not find the command `{args}`.", delete_after=7)
+                await msg.channel.send(
+                    f"Could not find the command `{args}`.", delete_after=7
+                )
 
         else:
             help_output = f"__**Commands**__\n"
