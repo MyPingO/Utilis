@@ -71,7 +71,10 @@ async def on_message(msg: discord.Message):
                 args = get_args(clean_content, command)
                 await bot_commands.call(command, msg, args)
             else:
-                await msg.channel.send(f"No command `{command}`.", delete_after=7)
+                error_message = f"No command `{command}`."
+                if len(error_message) > 2000:
+                    error_message = f"No command `{command[:2000-16]}...`"
+                await msg.channel.send(error_message, delete_after=7)
 
 
 def start_bot() -> None:

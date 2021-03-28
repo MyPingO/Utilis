@@ -124,14 +124,18 @@ class Bot_Commands:
         try:
             await self.commands[command].run(msg, args)
         except Exception as e:
-            print(e)
             if not client.is_closed():
                 try:
+                    error_message = f"Error executing `{command}`."
+                    if len(error_message) > 2000:
+                        error_message = f"Error executing `{command[:2000-21]}...`"
+
                     await msg.channel.send(
-                        f"Error executing `{command}`.", delete_after=7
+                        error_message, delete_after=7
                     )
                 except Exception as e2:
-                    print(e2)
+                    print("Error sending error message:", e2, sep="\n")
+            raise e
 
 
 bot_commands = Bot_Commands()
