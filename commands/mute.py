@@ -35,7 +35,6 @@ class Mute_Command(Bot_Command):
                 #find member in this server
                 try:
                     #member id
-                    print(parsed_args[0])
                     member = guild.get_member(int(parsed_args[0][3:-1]))
                 except:
                     print(f"User @{parsed_args[0]} could not be found")
