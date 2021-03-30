@@ -77,7 +77,8 @@ class Bot_Commands:
     def load_command(self, path: Path, indent=2) -> None:
         """Loads a command from a Python file.
         Expects the file to have a global variable `command` that is an instance
-        of a subclass of `Bot_Command`.
+        of a subclass of `Bot_Command`, and/or a global variable `commands` that
+        is a list of instances that are subclasses of `Bot_Command`.
         """
 
         module_name = path.as_posix()[: -len(path.suffix)].replace('/', '.')
@@ -85,10 +86,16 @@ class Bot_Commands:
 
         c = import_module(module_name)
 
+        loaded_commands = False
         if hasattr(c, "command"):
             self.add_command(c.command)
-        else:
-            raise AttributeError(f"Could not find command in file {module_name}.")
+            loaded_commands = True
+        if hasattr(c, "commands"):
+            for command in c.commands:
+                self.add_command(command)
+            loaded_commands = True
+        if not loaded_commands:
+            raise AttributeError(f"Could not find command(s) in file {module_name}.")
 
     def add_command(self, command: Bot_Command) -> None:
         """Adds a command to the list of the bot's commands."""
