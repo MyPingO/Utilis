@@ -336,7 +336,6 @@ async def user_select_from_list(
     option_text_generator: Callable[[], str],
     responder: discord.Member = None,
     title: str = None,
-    indent: int = 2,
     timeout: int = 60,
 ):
     """Sends a numbered list of options to be chosen from in a channel. If
@@ -370,24 +369,18 @@ async def user_select_from_list(
     The message included at the top of the message asking for a selection to be
     made.
 
-    indent: `int`
-    How many spaces each string representation of an option should be indented
-    in the message asking for a selection from `options`.
-
     timeout: `int`
     How long in seconds the function should wait for a selection from `options`
     before timing out and returning `None`.
     """
 
-    message_text = ""
-    if responder:
-        message_text += responder.mention + " "
-    if title:
-        message_text += f"**{title}**\n"
+    message_text = responder.mention if responder else ""
+    message_embed = discord.Embed(title=title)
+
     for index, item in enumerate(options):
-        if title:
-            message_text += " " * indent
-        message_text += f"**{str(index+1)}:** {option_text_generator(item)}\n"
+        message_embed.add_field(
+            name=str(index + 1), value=option_text_generator(item), inline=False
+        )
 
     if responder is not None:
         check_user_int_response = (
@@ -402,7 +395,7 @@ async def user_select_from_list(
             and x.content.isdigit()
         )
 
-    msg = await channel.send(message_text)
+    msg = await channel.send(message_text, embed=message_embed)
 
     # Loop until a valid selection is made or the function times out waiting
     # for a selection.
