@@ -3,7 +3,7 @@ from random import choice
 import json
 from pathlib import Path
 import discord
-from utils import user_select_from_list, accept_deny
+from utils import user_select_from_list
 from core import client
 
 solutions_path = Path("data/assignments/solutions")
@@ -12,6 +12,7 @@ commands = []  # class_name (211, 212)
 
 
 def save_assignments():
+    assignments_path.parent.mkdir(parents=True, exist_ok=True)
     assignment_dict = {}
     for i in commands:
         assignment_dict[i.name] = i.class_info
