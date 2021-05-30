@@ -1,4 +1,5 @@
 import discord
+import asyncio
 from pathlib import Path
 
 from core import client
@@ -56,6 +57,7 @@ async def on_connect():
 @client.event
 async def on_ready():
     print("   Ready   \n------------\n")
+    await asyncio.gather(*(c.on_ready() for c in bot_commands.unique_commands.values()))
 
 
 @client.event

@@ -36,6 +36,9 @@ class Bot_Command:
         """The function to be run when the command is called."""
         pass
 
+    async def on_ready(self):
+        pass
+
     aliases: list[str] = []
 
 
@@ -81,7 +84,7 @@ class Bot_Commands:
         is a list of instances that are subclasses of `Bot_Command`.
         """
 
-        module_name = path.as_posix()[: -len(path.suffix)].replace('/', '.')
+        module_name = path.as_posix()[: -len(path.suffix)].replace("/", ".")
         print(f"{' '*indent}Loading {module_name}")
 
         c = import_module(module_name)
@@ -137,9 +140,7 @@ class Bot_Commands:
                     if len(error_message) > 2000:
                         error_message = f"Error executing `{command[:2000-21]}...`"
 
-                    await msg.channel.send(
-                        error_message, delete_after=7
-                    )
+                    await msg.channel.send(error_message, delete_after=7)
                 except Exception as e2:
                     print("Error sending error message:", e2, sep="\n")
             raise e
