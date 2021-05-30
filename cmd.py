@@ -2,6 +2,7 @@ import discord
 from core import client
 from pathlib import Path
 from importlib import import_module
+from typing import Union, Optional
 
 
 class Bot_Command:
@@ -32,11 +33,45 @@ class Bot_Command:
 
     long_help: str = "No information available for this command."
 
+    def get_help(self, member: Optional[discord.Member]) -> Union[str, discord.Embed]:
+        """Gives a detailed explanation of the command for use with the help
+        command. Returns either a string explaining a command or an instance
+        of `discord.Embed` for the help command to display.
+
+        Attributes
+        ------------
+        member: Optional[discord.Member]
+        A member to show help for or `None`. Can be used to show different help
+        messages for members with different permissions.
+        """
+        return self.long_help
+
+    def can_run(
+        self,
+        location: Optional[Union[discord.TextChannel, discord.Guild]],
+        member: Optional[discord.Member],
+    ) -> bool:
+        """Returns whether or not `member` has permission to run this command
+        in `location`.
+
+        Attributes
+        ------------
+        location: Optional[Union[discord.TextChannel, discord.Guild]]
+        Where the command is being run. Can be a channel or guild, or `None`
+        to represent the 'default' location.
+
+        member: Optional[discord.Member]
+        The member that is being checked to see if they can run the command.
+        Can be `None` to represent the 'default' permission for most users.
+        """
+        return True
+
     async def run(self, msg: discord.Message, args: str):
         """The function to be run when the command is called."""
         pass
 
     async def on_ready(self):
+        """The function to be run when the bot is ready for operation."""
         pass
 
     aliases: list[str] = []
@@ -129,6 +164,17 @@ class Bot_Commands:
 
     def get_command(self, command: str) -> Bot_Command:
         return self.commands[command]
+
+    def can_run(
+        self,
+        command: str,
+        location: Optional[Union[discord.TextChannel, discord.Guild]],
+        member: Optional[discord.Member],
+    ) -> bool:
+        try:
+            return self.commands[command].can_run(location, member)
+        except:
+            return False
 
     async def call(self, command: str, msg: discord.Message, args: str) -> None:
         try:

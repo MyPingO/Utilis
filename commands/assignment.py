@@ -1,4 +1,5 @@
-from cmd import Bot_Command, bot_commands
+from cmd import Bot_Command
+from commands.help import command as help_cmd
 from random import choice
 import json
 from pathlib import Path
@@ -24,8 +25,16 @@ class Assignment_Command(Bot_Command):
 
     short_help = "Shows a detailed explanation of the specified assignment including relevant links, hints and solutions."
 
-    long_help = "Specify the assignment you want help with: $[class_number][assignment_number]\n**Sub-commands are as follows:**\n     $[class_number] add [assignment_number] [url] [title]\n     $[class-number] pending [assignment_number]\n     $[class_number] solution [assignment_number]\n"
-    # **ADMINS ONLY:**\n     $[class_number] remove [assignment_number] [title_of_link]"
+    long_help = """Specify the assignment you want help with:
+    $[class_number][assignment_number]
+
+    **Sub-commands:**
+    $[class_number] add [assignment_number] [url] [title]
+    $[class_number] solution [assignment_number]"""
+
+    admin_long_help = """**ADMINS ONLY:**
+    $[class-number] pending [assignment_number]
+    $[class_number] remove [assignment_number] [title_of_link]"""
 
     def __init__(self, class_name, class_info):
         self.name = class_name  # example ($211 or $212)
@@ -33,6 +42,12 @@ class Assignment_Command(Bot_Command):
             class_info  # JSON part of the file that accesses the class_name
         )
         print(self.class_info)  # example of class_info
+
+    def get_help(self, member):
+        if member is None or not member.guild_permissions.administrator:
+            return self.long_help
+        else:
+            return self.long_help + "\n" + self.admin_long_help
 
     # helper function to take a specific answer for reviewing pending links
     async def accept_deny_multiple(self, msg, assignment_num):
@@ -121,7 +136,7 @@ class Assignment_Command(Bot_Command):
         # if user types [class_name] and thats it
         if not args:
             # call long_help command for this command
-            await bot_commands.call("help", msg, self.name)
+            await help_cmd.get_command_info(self, msg.channel, msg.author)
             return
 
         if (
