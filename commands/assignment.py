@@ -6,6 +6,7 @@ from pathlib import Path
 import discord
 from utils import user_select_from_list
 from core import client
+from typing import Optional
 
 solutions_path = Path("data/assignments/solutions")
 assignments_path = Path("data/assignments/assignments.json")
@@ -43,7 +44,7 @@ class Assignment_Command(Bot_Command):
         )
         print(self.class_info)  # example of class_info
 
-    def get_help(self, member):
+    def get_help(self, member: Optional[discord.Member], args: Optional[str]):
         if member is None or not member.guild_permissions.administrator:
             return self.long_help
         else:

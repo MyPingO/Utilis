@@ -33,7 +33,9 @@ class Bot_Command:
 
     long_help: str = "No information available for this command."
 
-    def get_help(self, member: Optional[discord.Member]) -> Union[str, discord.Embed]:
+    def get_help(
+        self, member: Optional[discord.Member], args: Optional[str]
+    ) -> Union[str, discord.Embed]:
         """Gives a detailed explanation of the command for use with the help
         command. Returns either a string explaining a command or an instance
         of `discord.Embed` for the help command to display.
@@ -43,6 +45,10 @@ class Bot_Command:
         member: Optional[discord.Member]
         A member to show help for or `None`. Can be used to show different help
         messages for members with different permissions.
+
+        args: Optional[str]
+        Arguments for the help command. Can be used to provide help for
+        subcommands instead of the entire command.
         """
         return self.long_help
 
@@ -174,6 +180,9 @@ class Bot_Commands:
         try:
             return self.commands[command].can_run(location, member)
         except:
+            # If the commands can_run method does not successfully return,
+            # assume the command can not be run. This prevents bugs from
+            # allowing access to commands that should not be allowed to be run.
             return False
 
     async def call(self, command: str, msg: discord.Message, args: str) -> None:
