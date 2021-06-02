@@ -12,6 +12,40 @@ re_channel_mention = re_compile(r"<#(\d{18})>")
 re_role_mention = re_compile(r"<@&(\d{18})>")
 
 
+async def roles(msg: discord.Message):
+    """Adds or removes specified roles from the message author.
+    Multiple roles can be added/removed in one message if they are separated by commas.
+    
+    Parameters
+    -----------
+    msg: `discord.Message`
+    The message containing the roles the author wants to assign or remove from themself.
+    Roles are separated by commas.
+    Role names are preceded by a `+` or `-` to specify whether they should be 
+    added or removed.
+    """
+
+    #split the message into a list of individual roles
+    arr = msg.content.split(", ")
+    for role in arr:
+        #get role name
+        name = role.strip()[1:]
+
+        #determine whether the role should be assigned or removed
+        if role.startswith("+"):
+            try:
+                r = discord.utils.get(msg.author.guild.roles, name=name)
+                await msg.author.add_roles(r)
+            except:
+                print(f"no role called {role[1:]}")
+        elif role.startswith("-"):
+            try:
+                r = discord.utils.get(msg.author.guild.roles, name=name)
+                await msg.author.remove_roles(r)
+            except:
+                print(f"{msg.author} doesn't have the role {role[1:]}")
+
+
 async def get_member(
     channel: discord.channel,
     m: str,

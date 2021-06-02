@@ -4,6 +4,7 @@ from pathlib import Path
 
 from core import client
 from cmd import bot_commands
+from utils import roles
 
 bot_prefix = "!"
 
@@ -93,6 +94,15 @@ async def on_message(msg: discord.Message):
                     if len(error_message) > 2000:
                         error_message = f"You do not have permission to run `{command[:2000-44]}...` here."
                     await msg.channel.send(error_message, delete_after=7)
+            #assigning roles
+            #only if message is in designated role channel
+            elif msg.channel.id == 846427205911052349:
+                #deletes messages sent in designated role channel after a delay
+                await msg.delete(delay=5)
+                #if message has prefix, call roles
+                if msg.content.startswith('+') or msg.content.startswith('-'):
+                    #assign role
+                    await roles(msg)
             else:
                 # If the command the user specified does not exist, send an
                 # error message
@@ -100,6 +110,13 @@ async def on_message(msg: discord.Message):
                 if len(error_message) > 2000:
                     error_message = f"No command `{command[:2000-16]}...`"
                 await msg.channel.send(error_message, delete_after=7)
+
+
+#allows members to pin messages on their own by reaching a reaction goal
+@client.event
+async def on_reaction_add(reaction: discord.Reaction, user: discord.Member):
+    if reaction.emoji == "📌" and reaction.count >= 3:
+        await reaction.message.pin()
 
 
 def start_bot() -> None:
