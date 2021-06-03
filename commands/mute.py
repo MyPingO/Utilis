@@ -3,16 +3,16 @@ from cmd import Bot_Command
 import discord
 import asyncio
 import re
-from utils import get_member
+from utils import get_member, format_max_utf16_len_string
 
 class Mute_Command(Bot_Command):
     name = "mute"
 
     default_time = "10m"
-    
+
     short_help = "Mutes user for specified time"
 
-    long_help = f"""Mutes the specified user for specified time. Default time is {default_time}. 
+    long_help = f"""Mutes the specified user for specified time. Default time is {default_time}.
     Arguments:
     `User`
     `Time: [XXwXXdXXhXXm] (optional)`
@@ -52,7 +52,12 @@ class Mute_Command(Bot_Command):
                 #for server mutes
                 if parsed_args[0].lower() == "all":
                     print(f"Muted @everyone for {parsed_args[1]}")
-                    await msg.channel.send(f"Muted all members for {parsed_args[1]}")
+                    await msg.channel.send(
+                        format_max_utf16_len_string(
+                            "Muted all members for {}",
+                            parsed_args[1]
+                        )
+                    )
                     for m in guild.members:
                         #doesn't assign role to serve owner and optionally admins
                         if m is guild.owner: #or m.guild_permissions.administrator:
@@ -71,13 +76,24 @@ class Mute_Command(Bot_Command):
                 #if member does not exist in this server
                 if member is None:
                     print(f"User @{parsed_args[0]} could not be found")
-                    await msg.channel.send(f"User @\{parsed_args[0]} could not be found")
+                    await msg.channel.send(
+                        format_max_utf16_len_string(
+                            "User @\{} could not be found",
+                            parsed_args[0]
+                        )
+                    )
                     return
 
                 #assigns member the role
                 await member.add_roles(mute)
                 print(f"Muted @{member} for {parsed_args[1]}")
-                await msg.channel.send(f"Muted {member.mention} for {parsed_args[1]}")
+                await msg.channel.send(
+                    format_max_utf16_len_string(
+                        "Muted {} for {}",
+                        member.mention,
+                        parsed_args[1]
+                    )
+                )
                 #waits for the specified time and then removes the role from user
                 await asyncio.sleep(seconds)
                 await member.remove_roles(mute)

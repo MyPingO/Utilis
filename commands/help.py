@@ -2,6 +2,7 @@ import discord
 from typing import Union, Optional
 
 from cmd import Bot_Command, bot_commands
+from utils import utf16_len, utf16_embed_len, format_max_utf16_len_string
 
 
 class Help_Command(Bot_Command):
@@ -45,7 +46,12 @@ class Help_Command(Bot_Command):
                     cmd = bot_commands.unique_commands[cmd_name]
                     # If the command name and its help info can't fit in the
                     # embed, send the embed and create a new one
-                    if len(help_embed) + len(cmd_name) + len(cmd.short_help) > 6000:
+                    if (
+                        utf16_embed_len(help_embed)
+                        + utf16_len(cmd_name)
+                        + utf16_len(cmd.short_help)
+                        > 6000
+                    ):
                         await msg.channel.send(embed=help_embed)
                         help_embed = discord.Embed(title="Commands (cont.)")
 
@@ -94,16 +100,17 @@ class Help_Command(Bot_Command):
 
         # Check to see that a valid command was passed or found
         if not isinstance(command, Bot_Command):
-            await channel.send(
-                f"Could not find the command `{command}`.", delete_after=7
+            error_message = format_max_utf16_len_string(
+                "Could not find the command `{}`", command
             )
+            await channel.send(error_message, delete_after=7)
             return
 
         # Make sure the member can run the command
         if not command.can_run(channel, member):
-            error_message = f"You do not have permission to run `{command.name}` here."
-            if len(error_message) > 2000:
-                error_message = f"You do not have permission to run `{command.name[:2000-44]}...` here."
+            error_message = format_max_utf16_len_string(
+                "You do not have permission to run `{}` here.", command.name
+            )
             await channel.send(error_message, delete_after=7)
             return
 

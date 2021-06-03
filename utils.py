@@ -1,8 +1,9 @@
 from core import client
 
 import discord
+import math
 from re import compile as re_compile
-from typing import Callable
+from typing import Callable, Iterable, Optional
 
 re_user_ping = re_compile(r"<@!?(\d{18})>")
 re_user_discriminator = re_compile(r"(.+)#(\d{4})")
@@ -12,26 +13,286 @@ re_channel_mention = re_compile(r"<#(\d{18})>")
 re_role_mention = re_compile(r"<@&(\d{18})>")
 
 
+def utf16_len(s: str) -> int:
+    """Returns the UTF16 length of a string, which is the length Discord uses
+    when checking if a message is too long.
+    """
+    return len(s.encode("utf_16_le", "replace")) // 2
+
+
+def utf16_embed_len(e: discord.Embed) -> int:
+    """Returns the UTF16 length of an embed, which is the length Discord uses
+    when checking if a message is too long.
+    """
+    total = 0
+    if isinstance(e.title, str):
+        total += utf16_len(e.title)
+    if isinstance(e.description, str):
+        total += utf16_len(e.description)
+    for field in getattr(e, "_fields", []):
+        total += utf16_len(field["name"]) + utf16_len(field["value"])
+
+    try:
+        footer = e._footer
+    except AttributeError:
+        pass
+    else:
+        if isinstance(footer["text"], str):
+            total += utf16_len(footer["text"])
+
+    try:
+        author = e._author
+    except AttributeError:
+        pass
+    else:
+        if isinstance(author["name"], str):
+            total += utf16_len(author["name"])
+
+    return total
+
+
+def max_utf16_len_string(s: str, maxlen: int, add_ellipsis: bool = True) -> str:
+    """Shortens a string to a maximum UTF16 length if it is too long.
+
+    Parameters
+    -----------
+    s: str
+    The string to shorten.
+
+    maxlen: int
+    The maximum UTF16 length for the string being shortened.
+
+    add_ellipsis: bool
+    Whether or not '...' should be added to the end of the string if it is
+    shortened. The ellipses are included when calculating the max length.
+    """
+    # Common simple cases for the function
+    if maxlen <= 0:
+        return ""
+    if utf16_len(s) <= maxlen:
+        return s
+    if add_ellipsis:
+        if maxlen <= 3:
+            return "." * maxlen
+
+    # Tries to naively slice the string assuming that all characters within
+    # maxlen have a UTF16 length of 1
+    if add_ellipsis:
+        naive_short = f"{s[:maxlen-3]}..."
+    else:
+        naive_short = s[:maxlen]
+    naive_len = utf16_len(naive_short)
+    if naive_len == maxlen:
+        return naive_short
+    # If the naive slice does not give the exact max length, use a right
+    # bisection to find a point to the right of where the slice should occur.
+    if naive_len < maxlen:
+        low = naive_len
+        high = len(s)
+    else:
+        low = 0
+        high = naive_len
+    while low < high:
+        mid = (low + high) // 2
+        if utf16_len(s[:mid]) <= maxlen:
+            low = mid + 1
+        else:
+            high = mid
+
+    # Move where the slice should occur to the left as little as possible
+    # while still being within maxlen.
+    if add_ellipsis:
+        while utf16_len(s[:low]) > maxlen - 3:
+            low -= 1
+        return f"{s[:low]}..."
+    else:
+        while utf16_len(s[:low]) > maxlen:
+            low -= 1
+        return s[:low]
+
+
+def format_max_utf16_len_string(
+    fstring: str,
+    *args,
+    max_total_len: Optional[int] = 2000,
+    max_arg_len: Optional[int] = None,
+    add_ellipsis: bool = True,
+) -> str:
+    """Formats a string replacing instances of `"{}"` with args while keeping
+    below a maximum length.
+
+    Examples
+    -----------
+    .. code-block:: python3
+        format_max_utf16_len_string(
+            "AB {} CD {}",
+            "123",
+            456,
+            max_total_len=None
+        ) == "AB 123 CD 456"
+
+    .. code-block:: python3
+        format_max_utf16_len_string(
+            "AB {} CD",
+            123456789
+            max_total_len=12
+        ) == "AB 123... CD"
+
+    .. code-block:: python3
+        format_max_utf16_len_string(
+            "AB {} CD",
+            123456789
+            max_total_len=None,
+            max_arg_len=6
+        ) == "AB 123... CD"
+
+    Parameters
+    -----------
+    fstring: str,
+    The string to format. "{}" should be used as placeholders for args.
+
+    *args
+    The args to replace the placeholder "{}"s in `fstring` with. The number of
+    args must be equal to the number of placeholders.
+
+    max_total_len: Optional[int]
+    The maximum UTF16 length for the return string. args will be shortened
+    roughly evenly until the UTF16 length of the final string will be within
+    the max length. `fstring` will not be shortened to reduce the final
+    string's length.
+
+    max_arg_len: Optional[int]
+    The maximum UTF16 length for every arg. This is applied before shortening
+    args to ensure that the return string's UTF16 length is also within
+    `max_total_len`.
+
+    add_ellipsis: bool
+    Whether or not args that are shortened to fit either `max_total_len` or
+    `max_arg_len` should have '...' at the end.
+    """
+    # If there's nothing to format, return the string.
+    if "{}" not in fstring and len(args) == 0:
+        return fstring
+
+    split_fstring = fstring.split("{}")
+    if len(split_fstring) != len(args) + 1:
+        raise ValueError("Number of arguments does not match number of placeholders.")
+
+    # Convert args to a list of strings
+    if max_arg_len is not None:
+        # Limit the UTF16 length of each arg to max_arg_len if it was given.
+        args = [
+            max_utf16_len_string(str(arg), max_arg_len, add_ellipsis) for arg in args
+        ]
+    elif max_total_len is not None:
+        # Limit the UTF16 length of each arg to max_total_len if it was given,
+        # because each arg can be at most that long.
+        args = [
+            max_utf16_len_string(str(arg), max_total_len, add_ellipsis) for arg in args
+        ]
+    else:
+        args = [str(arg) for arg in args]
+
+    # If a max UTF16 length was given for the string, shorten args to fit it.
+    if max_total_len is not None:
+        # Get a list of the UTF16 length of every arg
+        args_lens = [utf16_len(arg) for arg in args]
+
+        # Get the total UTF16 lengths of the fstring and args.
+        total_fstring_len = sum(utf16_len(s) for s in split_fstring)
+        total_args_len = sum(args_lens)
+
+        # The maximum total length of all args in order to keep the return
+        # string's UTF16 length within max_total_len.
+        total_args_maxlen = max_total_len - total_fstring_len
+
+        # If the fstring is too long to fit any args in, return the fstring.
+        if total_args_len <= 0:
+            return "".join(split_fstring)
+
+        # Keep shortening the longest args until all args are within the total
+        # length for all args.
+        while total_args_len > total_args_maxlen:
+            # Get the longest and second longest arg lengths.
+            sorted_unique_lens = sorted(set(args_lens))
+            maxlen = sorted_unique_lens[-1]
+            if len(sorted_unique_lens) > 1:
+                second_maxlen = sorted_unique_lens[-2]
+            else:
+                second_maxlen = 0
+
+            # Get the indecies of args to shorten. The list is reversed so
+            # that the last args get shortened the most.
+            max_len_indecies = [i for i, v in enumerate(args_lens) if v == maxlen]
+            max_len_indecies.reverse()
+
+            # How much space can be saved by shortening the longest strings.
+            # This can either be enough space to bring the total length of
+            # args below the max length, or shortening the longest strings to
+            # the length of the second largest strings, so that the second
+            # largest strings will also be shortened in the next step in the
+            # loop.
+            total_delta = min(
+                total_args_len - total_args_maxlen,
+                len(max_len_indecies) * (maxlen - second_maxlen),
+            )
+
+            # Shorten the longest args.
+            for index_num, index in enumerate(max_len_indecies):
+                # The amount to shorten the arg. This should be as short as
+                # possible.
+                # The amount that each string gets shortened by gets smaller
+                # as the loop continues, as total_delta will decrease and
+                shorten_amount = math.ceil(
+                    total_delta / (len(max_len_indecies) - index_num)
+                )
+                # What to shorten the arg to. Should not be shorter than the
+                # second largest args.
+                shorten_to = max(
+                    maxlen - shorten_amount,
+                    second_maxlen,
+                )
+                # Shorten the arg
+                args[index] = max_utf16_len_string(
+                    args[index], shorten_to, add_ellipsis
+                )
+                # Update the arg's UTF16 length in the list of arg UTF16 lengths
+                args_lens[index] = utf16_len(args[index])
+                # Decrease how much the rest of the longest args need to be
+                # shortened by in order to reach the target total length.
+                delta = maxlen - args_lens[index]
+                total_delta -= delta
+
+            # Update the total arg lengths.
+            total_args_len = sum(args_lens)
+
+    # Insert args into the fstring and return
+    ret = "".join(
+        fstring_part + arg_part for fstring_part, arg_part in zip(split_fstring, args)
+    )
+    return ret + split_fstring[-1]
+
+
 async def roles(msg: discord.Message):
     """Adds or removes specified roles from the message author.
     Multiple roles can be added/removed in one message if they are separated by commas.
-    
+
     Parameters
     -----------
     msg: `discord.Message`
     The message containing the roles the author wants to assign or remove from themself.
     Roles are separated by commas.
-    Role names are preceded by a `+` or `-` to specify whether they should be 
+    Role names are preceded by a `+` or `-` to specify whether they should be
     added or removed.
     """
 
-    #split the message into a list of individual roles
+    # split the message into a list of individual roles
     arr = msg.content.split(", ")
     for role in arr:
-        #get role name
+        # get role name
         name = role.strip()[1:]
 
-        #determine whether the role should be assigned or removed
+        # determine whether the role should be assigned or removed
         if role.startswith("+"):
             try:
                 r = discord.utils.get(msg.author.guild.roles, name=name)
@@ -47,7 +308,7 @@ async def roles(msg: discord.Message):
 
 
 async def get_member(
-    channel: discord.channel,
+    channel: discord.TextChannel,
     m: str,
     responder: discord.Member = None,
     allow_multiple_matches: bool = True,
@@ -60,7 +321,7 @@ async def get_member(
 
     Parameters
     -----------
-    channel: `discord.Channel`
+    channel: `discord.TextChannel`
     A channel from the guild you want to search for the member `m` in. If
     multiple members that match `m` are found and `allow_multiple_matches` is
     `True`, a message will be sent to this channel asking for one of the
@@ -160,7 +421,7 @@ async def get_member(
 
 
 async def get_channel(
-    channel: discord.channel,
+    channel: discord.TextChannel,
     c: str,
     responder: discord.Member = None,
     include_hidden_channels: bool = False,
@@ -174,7 +435,7 @@ async def get_channel(
 
     Parameters
     -----------
-    channel: `discord.Channel`
+    channel: `discord.TextChannel`
     A channel from the guild you want to search for the channel `c` in. If
     multiple channels that match `c` are found and `allow_multiple_matches` is `True`, a
     message will be sent to this channel asking for one of the matching channels
@@ -268,7 +529,7 @@ async def get_channel(
 
 
 async def get_role(
-    channel: discord.channel,
+    channel: discord.TextChannel,
     r: str,
     responder: discord.Member = None,
     allow_multiple_matches: bool = True,
@@ -281,7 +542,7 @@ async def get_role(
 
     Parameters
     -----------
-    channel: `discord.Channel`
+    channel: `discord.TextChannel`
     A channel from the guild you want to search for the role `r` in. If
     multiple roles that match `r` are found and `allow_multiple_matches` is
     `True`, a message will be sent to this channel asking for one of the
@@ -365,8 +626,8 @@ async def get_role(
 
 
 async def user_select_from_list(
-    channel: discord.channel,
-    options: list,
+    channel: discord.TextChannel,
+    options: Iterable,
     option_text_generator: Callable[[], str],
     responder: discord.Member = None,
     title: str = None,
@@ -382,7 +643,7 @@ async def user_select_from_list(
 
     Parameters
     -----------
-    channel: `discord.channel`
+    channel: `discord.TextChannel`
     The channel where the `options` will be sent to be chosen from.
 
     options: `list`
@@ -411,10 +672,19 @@ async def user_select_from_list(
     message_text = responder.mention if responder else ""
     message_embed = discord.Embed(title=title)
 
+    choice_messages = []
+
     for index, item in enumerate(options):
-        message_embed.add_field(
-            name=str(index + 1), value=option_text_generator(item), inline=False
-        )
+        name = str(index + 1)
+        value = option_text_generator(item)
+
+        if utf16_embed_len(message_embed) + utf16_len(name + value) > 6000:
+            choice_messages.append(
+                await channel.send(message_text, embed=message_embed)
+            )
+            message_embed = discord.Embed(title=title)
+
+        message_embed.add_field(name=name, value=value, inline=False)
 
     if responder is not None:
         check_user_int_response = (
@@ -429,7 +699,7 @@ async def user_select_from_list(
             and x.content.isdigit()
         )
 
-    msg = await channel.send(message_text, embed=message_embed)
+    choice_messages.append(await channel.send(message_text, embed=message_embed))
 
     # Loop until a valid selection is made or the function times out waiting
     # for a selection.
@@ -442,7 +712,7 @@ async def user_select_from_list(
                 timeout=timeout,
             )
         except:
-            await msg.delete()
+            await channel.delete_messages(choice_messages)
             await channel.send(
                 "Error: Timed out waiting for user input.", delete_after=20
             )
@@ -450,10 +720,14 @@ async def user_select_from_list(
 
         int_response = int(response.content)
         if int_response <= len(options) and int_response > 0:
-            await msg.delete()
-            await response.delete()
+            await channel.delete_messages(choice_messages)
+            try:
+                await response.delete()
+            except discord.errors.NotFound:
+                pass
             return options[int_response - 1]
         else:
-            await channel.send(
-                f"Error: Option `{response.content}` is out of bounds.", delete_after=7
+            error_message = format_max_utf16_len_string(
+                "Error: Option `{}` is out of bounds.", response.content
             )
+            await channel.send(error_message, delete_after=7)

@@ -1,11 +1,11 @@
 from cmd import Bot_Command
 
 import discord
-from utils import get_member
+from utils import get_member, format_max_utf16_len_string
 
 class Unmute_Command(Bot_Command):
     name = "unmute"
-    
+
     short_help = "Unmutes user"
 
     long_help = f"""Unmutes the specified user.
@@ -38,17 +38,32 @@ class Unmute_Command(Bot_Command):
                 member = await get_member(msg.channel, parsed_args, responder=msg.author)
                 if member is None:
                     print(f"User @\{parsed_args} could not be found")
-                    await msg.channel.send(f"User @\{parsed_args} could not be found")
+                    await msg.channel.send(
+                        format_max_utf16_len_string(
+                            "User @\{} could not be found",
+                            parsed_args
+                        )
+                    )
                     return
                 #if member is muted
                 if mute in member.roles:
                     #removes role from member
                     await member.remove_roles(mute)
                     print(f"User @{member} was unmuted")
-                    await msg.channel.send(f"User {member.mention} was unmuted")
+                    await msg.channel.send(
+                        format_max_utf16_len_string(
+                            "User {} was unmuted",
+                            member.mention
+                        )
+                    )
                 else:
                     print(f"User @{member} is not muted")
-                    await msg.channel.send(f"User @\{member} is not muted")
+                    await msg.channel.send(
+                        format_max_utf16_len_string(
+                            "User @\{} is not muted",
+                            member
+                        )
+                    )
             #if user didnt enter any arguments
             else:
                 print("Please specify a user.")
