@@ -1,5 +1,7 @@
-import discord
 from core import client
+from util import format_max_utf16_len_string
+
+import discord
 from pathlib import Path
 from importlib import import_module
 from typing import Union, Optional
@@ -191,10 +193,9 @@ class Bot_Commands:
         except Exception as e:
             if not client.is_closed():
                 try:
-                    error_message = f"Error executing `{command}`."
-                    if len(error_message) > 2000:
-                        error_message = f"Error executing `{command[:2000-21]}...`"
-
+                    error_message = format_max_utf16_len_string(
+                        "Error executing `{}`", command
+                    )
                     await msg.channel.send(error_message, delete_after=7)
                 except Exception as e2:
                     print("Error sending error message:", e2, sep="\n")
