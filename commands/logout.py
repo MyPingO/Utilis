@@ -1,6 +1,6 @@
 import discord
 from core import client
-from cmd import Bot_Command
+from cmd import Bot_Command, bot_commands
 
 
 class Logout_Command(Bot_Command):
@@ -14,14 +14,12 @@ class Logout_Command(Bot_Command):
     Arguments:
     `None`"""
 
+    def can_run(self, location, member):
+        return member is not None and member.guild_permissions.administrator
+
     async def run(self, msg: discord.Message, args: str):
-        if msg.author.guild_permissions.administrator:
-            await msg.channel.send("Logging out.")
-            await client.logout()
-        else:
-            await msg.channel.send(
-                "Must be an administrator to use this command.", delete_after=7
-            )
+        await msg.channel.send("Logging out.")
+        await client.logout()
 
 
-command = Logout_Command()
+bot_commands.add_command(Logout_Command())

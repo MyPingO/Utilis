@@ -1,4 +1,4 @@
-from cmd import Bot_Command
+from cmd import Bot_Command, bot_commands
 
 import discord
 
@@ -24,4 +24,4 @@ class Echo_Command(Bot_Command):
             await msg.channel.send("Echo.")
 
 
-command = Echo_Command()
+bot_commands.add_command(Echo_Command())

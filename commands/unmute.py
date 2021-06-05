@@ -1,4 +1,4 @@
-from cmd import Bot_Command
+from cmd import Bot_Command, bot_commands
 from utils import get_member, format_max_utf16_len_string
 from pathlib import Path
 
@@ -19,8 +19,12 @@ class Unmute_Command(Bot_Command):
     Replace `User` with `all` to server unmute.
     """
 
-    async def run(self, msg: discord.Message, args: str):
+    def can_run(self, location, member):
         #only admins are able to use this command
+        return member is not None and member.guild_permissions.administrator
+
+    async def run(self, msg: discord.Message, args: str):
+        # TODO: Remove this check
         if msg.author.guild_permissions.administrator:
             #checks that user entered arguments for the command
             if args:
@@ -51,7 +55,7 @@ class Unmute_Command(Bot_Command):
 
                 #get the member to be unmuted
                 member = await get_member(msg.channel, parsed_args, responder=msg.author)
-                
+
                 #if member could not be found
                 if member is None:
                     print(f"User @{parsed_args} could not be found")
@@ -96,4 +100,5 @@ class Unmute_Command(Bot_Command):
             print("You do not have permission to use this command.")
             await msg.channel.send("You do not have permission to use this command.")
 
-command = Unmute_Command()
+unmute = Unmute_Command()
+bot_commands.add_command(unmute)

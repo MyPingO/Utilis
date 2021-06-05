@@ -35,20 +35,18 @@ class Help_Command(Bot_Command):
                 description="Run `help <command>` to get detailed information about a specific command.",
             )
 
-            # Get all of the commands in alphabetical order
-            commands = list(bot_commands.unique_commands.keys())
-            commands.sort()
-
-            # Add all of the commands to the embed
-            for cmd_name in commands:
+            # Get all of the commands in alphabetical order and add them to
+            # the embed.
+            for cmd in sorted(
+                bot_commands.get_commands_in(msg.guild), key=lambda c: c.name.casefold()
+            ):
                 # Make sure that the command can be run by the user
-                if bot_commands.can_run(cmd_name, msg.channel, msg.author):
-                    cmd = bot_commands.unique_commands[cmd_name]
+                if bot_commands.can_run(cmd, msg.channel, msg.author):
                     # If the command name and its help info can't fit in the
                     # embed, send the embed and create a new one
                     if (
                         utf16_embed_len(help_embed)
-                        + utf16_len(cmd_name)
+                        + utf16_len(cmd.name)
                         + utf16_len(cmd.short_help)
                         > 6000
                     ):
@@ -56,7 +54,7 @@ class Help_Command(Bot_Command):
                         help_embed = discord.Embed(title="Commands (cont.)")
 
                     help_embed.add_field(
-                        name=cmd_name, value=cmd.short_help, inline=False
+                        name=cmd.name, value=cmd.short_help, inline=False
                     )
 
             await msg.channel.send(embed=help_embed)
@@ -94,12 +92,12 @@ class Help_Command(Bot_Command):
         # If the name of a command was passed, try to find a command with that
         # name or alias
         if isinstance(command, str):
-            command = command.casefold()
-            if bot_commands.has_command(command):
-                command = bot_commands.get_command(command)
+            cmd = bot_commands.get_command(command, channel.guild)
+        else:
+            cmd = command
 
         # Check to see that a valid command was passed or found
-        if not isinstance(command, Bot_Command):
+        if not isinstance(cmd, Bot_Command):
             error_message = format_max_utf16_len_string(
                 "Could not find the command `{}`", command
             )
@@ -107,9 +105,9 @@ class Help_Command(Bot_Command):
             return
 
         # Make sure the member can run the command
-        if not command.can_run(channel, member):
+        if not cmd.can_run(channel, member):
             error_message = format_max_utf16_len_string(
-                "You do not have permission to run `{}` here.", command.name
+                "You do not have permission to run `{}` here.", cmd.name
             )
             await channel.send(error_message, delete_after=7)
             return
@@ -119,26 +117,27 @@ class Help_Command(Bot_Command):
             args = args.strip()
 
         # Get help info about the command to display
-        cmd_help = command.get_help(member, args)
+        cmd_help = cmd.get_help(member, args)
 
         # If the command returned its own custom help embed, send it
         if isinstance(cmd_help, discord.Embed):
             await channel.send(embed=cmd_help)
             return
         # Otherwise, create an embed for the command and send it
-        help_embed = discord.Embed(title=f"__{command.name}__")
+        help_embed = discord.Embed(title=f"__{cmd}__")
         help_embed.description = cmd_help
 
         # Add all of the commands aliases to the help embed if it has any
-        if command.aliases:
-            cmd_aliases = command.aliases.copy()
-            cmd_aliases.sort()
+        if cmd.aliases:
             help_embed.add_field(
                 name="__*Aliases:*__\n",
-                value="\n".join((alias for alias in cmd_aliases)),
+                value="\n".join(
+                    (alias for alias in sorted(cmd.aliases, key=lambda a: a.casefold()))
+                ),
             )
 
         await channel.send(embed=help_embed)
 
 
-command = Help_Command()
+help_cmd = Help_Command()
+bot_commands.add_command(help_cmd)

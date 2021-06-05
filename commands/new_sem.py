@@ -1,6 +1,7 @@
-from cmd import Bot_Command
+from cmd import Bot_Command, bot_commands
 
 import discord
+
 
 class New_Semester_Command(Bot_Command):
     name = "newsem"
@@ -14,14 +15,17 @@ class New_Semester_Command(Bot_Command):
 
     categories = ["random"]
 
+    def can_run(self, location, member):
+        return member is not None and member.guild_permissions.administrator
+
     async def run(self, msg: discord.Message, args: str):
-        if msg.author.guild_permissions.administrator:
-            if not args:
-                for category in msg.guild.categories:
-                    if category.name.lower() in self.categories:
-                        for channel in category.text_channels:
-                            print("A new semester has started!")
-                            await channel.send("""```
+        if not args:
+            for category in msg.guild.categories:
+                if category.name.lower() in self.categories:
+                    for channel in category.text_channels:
+                        print("A new semester has started!")
+                        await channel.send(
+                            """```
          |\     |
          | \    |
          |  \   |
@@ -29,62 +33,62 @@ class New_Semester_Command(Bot_Command):
          |    \ |
          |     \|
           _______
-         |       
-         |       
-         |_____  
-         |       
-         |       
+         |
+         |
+         |_____
+         |
+         |
          |_______
     \                /
-     \              / 
-      \            /  
-       \    /\    /   
-        \  /  \  /    
-         \/    \/     
-            
-              
-              
-         _________ 
+     \              /
+      \            /
+       \    /\    /
+        \  /  \  /
+         \/    \/
+
+
+
+         _________
         |
         |
-        |________ 
+        |________
                  |
                  |
         _________|
          _______
-        |       
-        |       
-        |_____  
-        |       
-        |         
+        |
+        |
+        |_____
+        |
+        |
         |_______
 
-         |\    /| 
-         | \  / | 
-         |  \/  | 
-         |      | 
-         |      | 
-         |      | 
+         |\    /|
+         | \  / |
+         |  \/  |
+         |      |
+         |      |
+         |      |
          _______
-        |              
-        |       
-        |_____  
-        |       
-        |       
+        |
+        |
+        |_____
+        |
+        |
         |_______
-         _________ 
+         _________
         |
         |
-        |________ 
+        |________
                  |
                  |
         _________|
         ___________
-             |     
-             |     
-             |     
-             |     
-             |     
+             |
+             |
+             |
+             |
+             |
              |
         _________
         |
@@ -93,19 +97,18 @@ class New_Semester_Command(Bot_Command):
         |
         |
         |________
-        _______     
+        _______
         |      |
         |      |
         |______|
         |   \\
         |    \\
         |     \\
-        ``` """)
-            else:
-                print("This command doesn't have any arguments.")
-                await msg.channel.send("This command doesn't have any arguments.")
+        ``` """
+                        )
         else:
-            print(f"{msg.author} tried to mark a new semester.")
-            await msg.channel.send("You do not have permission to use this command. This incident has been reported.")
+            print("This command doesn't have any arguments.")
+            await msg.channel.send("This command doesn't have any arguments.")
 
-command = New_Semester_Command()
+
+bot_commands.add_command(New_Semester_Command())

@@ -13,7 +13,6 @@ def starts_with_mention(content: str) -> bool:
     """Returns whether or not the bot was mentioned at the start of the
     message.
     """
-
     return content.startswith(client.user.mention) or content.startswith(
         f"<@!{client.user.id}>"
     )
@@ -23,7 +22,6 @@ def remove_prefix(content: str) -> str:
     """Removes the bot prefix or bot's mention string from the start of a
     string.
     """
-
     if content.startswith(bot_prefix):
         return content[len(bot_prefix) :].strip()
     elif starts_with_mention(content):
@@ -32,22 +30,21 @@ def remove_prefix(content: str) -> str:
         raise ValueError(f"String '{content}' does not start with the bot's prefix.")
 
 
-def get_command(content: str) -> str:
+def get_command_name(content: str) -> str:
     """Returns the command name from a message's text.
     Assumes that the bot prefix has been removed.
     """
-
     if " " in content:
         return content.split(" ")[0].casefold()
     else:
         return content.casefold()
 
 
-def get_args(content: str, command: str) -> str:
+def get_args(content: str, cmd_name: str) -> str:
     """Returns the command arguments from a message's text.
     Assumes that the bot prefix has been removed.
     """
-    return content.strip()[len(command) :].strip()
+    return content.strip()[len(cmd_name) :].strip()
 
 
 @client.event
@@ -58,7 +55,8 @@ async def on_connect():
 @client.event
 async def on_ready():
     print("   Ready   \n------------\n")
-    await asyncio.gather(*(c.on_ready() for c in bot_commands.unique_commands.values()))
+    # Runs the on_ready co-routine for every command.
+    await asyncio.gather(*(c.on_ready() for c in bot_commands.get_all_commands()))
 
 
 @client.event
@@ -69,48 +67,53 @@ async def on_message(msg: discord.Message):
         if msg.content.startswith(bot_prefix) or starts_with_mention(msg.content):
             # Get the command the member is trying to run
             clean_content = remove_prefix(msg.content)
-            command = get_command(clean_content)
+            cmd_name = get_command_name(clean_content)
 
-            if not command:
+            if not cmd_name:
                 # If the use did not specify a command, call the help command
                 # to show a list of all commands.
-                if bot_commands.has_command("help"):
-                    await bot_commands.call("help", msg, "")
+                help_command = bot_commands.get_command("help", msg.guild)
+                if help_command is not None:
+                    await bot_commands.call(help_command, msg, "")
                 else:
                     # If there is no help command, send an error message instead
                     await msg.channel.send("No command specified.", delete_after=7)
-            elif bot_commands.has_command(command):
-                if bot_commands.can_run(command, msg.channel, msg.author):
-                    # If the command exists and the member can run it, run the
-                    # command
-                    args = get_args(clean_content, command)
-                    await bot_commands.call(command, msg, args)
+            else:
+                command = bot_commands.get_command(cmd_name, msg.guild)
+                if command is not None:
+                    if bot_commands.can_run(command, msg.channel, msg.author):
+                        # If the command exists and the member can run it, run the
+                        # command
+                        args = get_args(clean_content, cmd_name)
+                        await bot_commands.call(command, msg, args)
+                    else:
+                        # If the command exists but the member can not run it, send
+                        # an error message
+                        error_message = format_max_utf16_len_string(
+                            "You do not have permission to run `{}` here.", cmd_name
+                        )
+                        await msg.channel.send(
+                            error_message,
+                            delete_after=7,
+                        )
                 else:
-                    # If the command exists but the member can not run it, send
-                    # an error message
+                    # If the command does not exist, send an error message
                     error_message = format_max_utf16_len_string(
-                        "You do not have permission to run `{}` here.", command
+                        "No command `{}`", cmd_name
                     )
                     await msg.channel.send(
                         error_message,
                         delete_after=7,
                     )
-            # assigning roles
-            # only if message is in designated role channel
-            elif msg.channel.id == 846427205911052349:
-                # deletes messages sent in designated role channel after a delay
-                await msg.delete(delay=5)
-                # if message has prefix, call roles
-                if msg.content.startswith("+") or msg.content.startswith("-"):
-                    # assign role
-                    await roles(msg)
-            else:
-                # If the command does not exist, send an error message
-                error_message = format_max_utf16_len_string("No command `{}`", command)
-                await msg.channel.send(
-                    error_message,
-                    delete_after=7,
-                )
+        # assigning roles
+        # only if message is in designated role channel
+        elif msg.channel.id == 846427205911052349:
+            # deletes messages sent in designated role channel after a delay
+            await msg.delete(delay=5)
+            # if message has prefix, call roles
+            if msg.content.startswith("+") or msg.content.startswith("-"):
+                # assign role
+                await roles(msg)
 
 
 # allows members to pin messages on their own by reaching a reaction goal

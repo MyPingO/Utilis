@@ -1,7 +1,7 @@
-from cmd import Bot_Command
+from cmd import Bot_Command, bot_commands
 from pathlib import Path
 from utils import get_member, format_max_utf16_len_string
-from commands.unmute import command as unmute
+from commands.unmute import unmute
 from main import bot_prefix
 
 import datetime
@@ -30,8 +30,13 @@ class Mute_Command(Bot_Command):
     Examples: `{bot_prefix}mute @user 2h` `{bot_prefix}mute nickname 2h` `{bot_prefix}mute @user`
     """
 
+    def can_run(self, location, member):
+        # only admins are able to use this command
+        return member is not None and member.guild_permissions.administrator
+
+
     async def run(self, msg: discord.Message, args: str):
-        #only admins are able to use this command
+        # TODO: Remove this check
         if msg.author.guild_permissions.administrator:
             #checks that user entered arguments for the command
             if args:
@@ -40,13 +45,16 @@ class Mute_Command(Bot_Command):
                 #gets current channel
                 channel = msg.channel
 
+                if not self.mute_log.exists():
+                    self.muted = {}
+                    self.save()
+
                 with self.mute_log.open("r") as file:
                     try:
                         self.muted = json.load(file)
                     except Exception as e:
                         self.muted = {}
                         print(e)
-                        self.save()
 
                 #creates 'mute' role if it doesn't already exist in this server
                 if discord.utils.get(guild.roles, name="mute") is None:
@@ -78,7 +86,7 @@ class Mute_Command(Bot_Command):
                         return
                     print(f"Muted @everyone")
                     await channel.send(f"Muted all members for {self.date_string(parsed_args[1:])}")
-                    
+
                     #sleep until the time to unmute everyone
                     await discord.utils.sleep_until(unmute_at)
                     for mem in guild.members:
@@ -89,7 +97,7 @@ class Mute_Command(Bot_Command):
                 else:
                     #get the member to be muted
                     member = await get_member(channel, m=parsed_args[0], responder=msg.author)
-                    
+
                     #if member does not exist in this server
                     if member is None:
                         print(f"User @{parsed_args[0]} could not be found")
@@ -98,6 +106,7 @@ class Mute_Command(Bot_Command):
                                 "User **\@{}** could not be found",
                                 parsed_args[0]
                             )
+                        )
                     else:
                         await self.log_mute(member, mute, str(unmute_at))
                         print(f"Muted @{member}")
@@ -136,7 +145,7 @@ class Mute_Command(Bot_Command):
 
         #separate the units into a dictionary
         units_dict = duration.groupdict()
-        
+
         #standardize the unit values
         for group in units_dict:
             if units_dict[group] is None:
@@ -163,14 +172,14 @@ class Mute_Command(Bot_Command):
 
     def date_string(self, time: list) -> str:
         out = ""
-        if list[0]:
-            out += f"{list[0]} weeks "
-        if list[1]:
-            out += f"{list[1]} days "
-        if list[2]:
-            out += f"{list[2]} hours "
-        if list[3]:
-            out += f"{list[3]} minutes"
+        if time[0]:
+            out += f"{time[0]} weeks "
+        if time[1]:
+            out += f"{time[1]} days "
+        if time[2]:
+            out += f"{time[2]} hours "
+        if time[3]:
+            out += f"{time[3]} minutes"
         return out
 
 
@@ -182,7 +191,7 @@ class Mute_Command(Bot_Command):
         #assign the member the mute role
         await member.add_roles(role)
         #writes to the file when the member should be unmuted
-        if str(member.guild.id) not in self.muted: 
+        if str(member.guild.id) not in self.muted:
             self.muted[str(member.guild.id)] = {str(member.id): str(unmute_at)}
         else:
             self.muted[str(member.guild.id)][str(member.id)] = str(unmute_at)
@@ -210,4 +219,4 @@ class Mute_Command(Bot_Command):
         with self.mute_log.open("w") as file:
             json.dump(self.muted, file, indent=4)
 
-command = Mute_Command()
+bot_commands.add_command(Mute_Command())

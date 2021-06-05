@@ -1,7 +1,9 @@
-from cmd import Bot_Command
+from cmd import Bot_Command, bot_commands
 
 import discord
 import random
+import re
+
 
 class Random_Command(Bot_Command):
     name = "random"
@@ -14,28 +16,24 @@ class Random_Command(Bot_Command):
     `Upper bound`
     """
 
+    args_matcher = re.compile(r"^(\d)+\s+(\d)+$")
+
     async def run(self, msg: discord.Message, args: str):
-        parsed_args = args.split(" ")
-        if len(parsed_args) == 2:
-            try:
-                #requires user to enter a valid range
-                if int(parsed_args[0]) == int(parsed_args[1]):
-                    print("Please enter two different numbers")
-                    await msg.channel.send("Please enter two different numbers")
-                    return
-                #accepts user input if upper and lower bound are switched
-                #elif (int(parsed_args[0]) > int(parsed_args[1])):
-                #    num = random.randint(int(parsed_args[1]), int(parsed_args[0]))
-                #else:
-                #    num = random.randint(int(parsed_args[0]), int(parsed_args[1]))
-                num = random.randint(int(parsed_args[0]), int(parsed_args[1]))
-                print(num)
-                await msg.channel.send(num)
-            except ValueError:
-                print("One or both of your arguments weren't integers")
-                await msg.channel.send("One or both of your arguments weren't integers")
+        m = self.args_matcher.fullmatch(args)
+        if m is not None:
+            arg1, arg2 = sorted((int(m.group(1)), int(m.group(2))))
+            # requires user to enter a valid range
+            if arg1 == arg2:
+                print("Please enter two different numbers")
+                await msg.channel.send("Please enter two different numbers")
+                return
+            num = random.randint(arg1, arg2)
+
+            print(num)
+            await msg.channel.send(num)
         else:
             print("Must enter 2 integer values arguments")
             await msg.channel.send("Must enter 2 integer value arguments")
 
-command = Random_Command()
+
+bot_commands.add_command(Random_Command())

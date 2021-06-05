@@ -1,8 +1,8 @@
 import json
 import re
 import discord
-from cmd import Bot_Command
-from commands.help import command as help_cmd
+from cmd import Bot_Command, bot_commands
+from commands.help import help_cmd
 from random import choice
 from pathlib import Path
 from random import choice
@@ -60,7 +60,7 @@ class Assignment_Command(Bot_Command):
 
     **Sub-commands:**
         $[class_number] assignments
-        $[class_number] addurl [assignment_number] [url] [title]    
+        $[class_number] addurl [assignment_number] [url] [title]
         $[class_number] solution [assignment_number] **NOTE:** Solutions to assignments are only available after their due date!
 
     """
@@ -687,6 +687,8 @@ else:
     with assignments_path.open() as file:
         assignments = json.load(file)
     for class_name in assignments:
-        # add command to commands list, commands list is from cmd.py
-        commands.append(Assignment_Command(class_name, assignments[class_name]))
+        # add command to commands list and add it as a global command
+        new_assignment = Assignment_Command(class_name, assignments[class_name])
         # assignments[class_name] = class_info ^ at the start
+        commands.append(new_assignment)
+        bot_commands.add_command(new_assignment)

@@ -1,7 +1,8 @@
-from cmd import Bot_Command
+from cmd import Bot_Command, bot_commands
 
 import discord
 import random
+
 
 class Coin_Flip_Command(Bot_Command):
     name = "coinflip"
@@ -16,9 +17,9 @@ class Coin_Flip_Command(Bot_Command):
     """
 
     async def run(self, msg: discord.Message, args: str):
-        random.seed()
-        choice = f'{random.choice(self.coin)}'          
+        choice = f"{random.choice(self.coin)}"
         print(choice)
         await msg.channel.send(choice)
 
-command = Coin_Flip_Command()
+
+bot_commands.add_command(Coin_Flip_Command())

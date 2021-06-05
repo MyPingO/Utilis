@@ -1,7 +1,6 @@
-from cmd import Bot_Command
+from cmd import Bot_Command, bot_commands
 from pathlib import Path
-from utils import get_member
-from utils import get_role
+from utils import get_member, get_role
 from random import choice
 
 import datetime
@@ -306,4 +305,4 @@ class Schedule_Command(Bot_Command):
         with self.session_log.open("w") as file:
             json.dump(self.sessions, file, indent=4)
 
-command = Schedule_Command()
+bot_commands.add_command(Schedule_Command())
