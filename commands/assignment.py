@@ -1,13 +1,16 @@
+import json
+import re
+import discord
 from cmd import Bot_Command
 from commands.help import command as help_cmd
 from random import choice
-import json
 from pathlib import Path
-import discord
+from random import choice
 from utils import user_select_from_list
 from core import client
 from typing import Optional
 
+# set variable to path of folders to call them later easier
 solutions_path = Path("data/assignments/solutions")
 assignments_path = Path("data/assignments/assignments.json")
 commands = []  # class_name (211, 212)
@@ -22,26 +25,57 @@ def save_assignments():
         json.dump(assignment_dict, file, indent=3)
 
 
+class Random_Color:
+    # chooses random color for embed messages
+    color = [
+        0x000000,  # black
+        0x00FF00,  # lime/bright green
+        0xFF0000,  # red
+        0x38E31F,  # green
+        0xA434EB,  # purple
+        0x0082FF,  # blue
+        0xE08200,  # orange/light brown
+        0xFF7DFF,  # pink
+        0xFEFFFF,  # white
+    ]
+    tempColor = -1
+
+    def get_color(self):
+        # choice() is from random library
+        randomColor = choice(self.color)
+        while self.tempColor == randomColor:
+            randomColor = choice(self.color)
+        self.tempColor = randomColor
+        return randomColor
+
+
+no_duplicate_random_color = Random_Color()
+
+
 class Assignment_Command(Bot_Command):
 
     short_help = "Shows a detailed explanation of the specified assignment including relevant links, hints and solutions."
 
-    long_help = """Specify the assignment you want help with:
-    $[class_number][assignment_number]
+    long_help = """Specify the assignment you want help with: $[class_number][assignment_number] Example: $211 1 **or** $212 3
 
     **Sub-commands:**
-    $[class_number] add [assignment_number] [url] [title]
-    $[class_number] solution [assignment_number]"""
+        $[class_number] assignments
+        $[class_number] addurl [assignment_number] [url] [title]    
+        $[class_number] solution [assignment_number] **NOTE:** Solutions to assignments are only available after their due date!
+
+    """
 
     admin_long_help = """**ADMINS ONLY:**
+    $[class_number] add [assignment_number]
+    $[class_number] edit [assignment_number]
     $[class-number] pending [assignment_number]
-    $[class_number] remove [assignment_number] [title_of_link]"""
+    $[class_number] removeurl [assignment_number] [title_of_link]"""
 
     def __init__(self, class_name, class_info):
         self.name = class_name  # example ($211 or $212)
-        self.class_info = (
-            class_info  # JSON part of the file that accesses the class_name
-        )
+        # JSON part of the file that accesses the class_name
+        self.class_info = class_info
+
         print(self.class_info)  # example of class_info
 
     def get_help(self, member: Optional[discord.Member], args: Optional[str]):
@@ -51,13 +85,13 @@ class Assignment_Command(Bot_Command):
             return self.long_help + "\n" + self.admin_long_help
 
     # helper function to take a specific answer for reviewing pending links
-    async def accept_deny_multiple(self, msg, assignment_num):
+    async def approve_deny_multiple(self, msg, assignment_num):
         # waits for a response from the command author and channel for 10 seconds
         try:
             response = await client.wait_for(
                 "message",
                 check=lambda m: m.author == msg.author and m.channel == msg.channel,
-                timeout=10,
+                timeout=30,
             )
             # if no response is given within 10 seconds
         except:
@@ -65,16 +99,21 @@ class Assignment_Command(Bot_Command):
             return None
 
         # splits resposne into smaller parts divided by a space
-        split_response = response.content.split(" ")
-        """split_response[0] = accept/deny
-           split_response[1:] = pending links to accept/deny """
-        accept_or_deny = split_response[0]
-        link_choice = split_response[1:]
-        # if they dont type 'accept' or 'deny', ex: 'MyTurtlesFTW'
+        response = re.split(r"[,，\s]\s*", response.content)
+
+        """split_response[0] = approve/deny
+           split_response[1:] = pending links to approve/deny """
+        approve_or_deny = response[0]
+        link_choice = response[1:]
+
+        # if they dont type 'approve' or 'deny', ex:
         if not (
-            accept_or_deny.casefold() == "accept" or accept_or_deny.casefold() == "deny"
+            approve_or_deny.casefold() == "approve"
+            or approve_or_deny.casefold() == "deny"
         ):
-            await msg.channel.send("Error: You answered incorrectly!")
+            await msg.channel.send(
+                "Error: You answered incorrectly! To approve or deny a link, type **approve** or **deny** followed by the number of the link you want to approve/deny\n Example: **approve 1** or **deny 3**. You can also approve/deny multiple links at once like this **approve 1 2 3** or **deny 4 5 6**."
+            )
             return
 
         for i in link_choice:  # check if choice indices is a number
@@ -101,45 +140,46 @@ class Assignment_Command(Bot_Command):
         # sort the link choices in order and reverse the response due to how we remove pending urls
         link_choice.sort()
         link_choice.reverse()
-        # if user wants to accept, append to the accepted urls list and remove from the pending list
-        if accept_or_deny.casefold() == "accept":
+        # if user wants to approve, append to the Relevant Links list and remove from the pending list
+        if approve_or_deny.casefold() == "approve":
             for i in link_choice:
-                self.class_info["assignments"][assignment_num]["added_urls"].append(
+                self.class_info["assignments"][assignment_num]["relevant_links"].append(
                     self.class_info["assignments"][assignment_num]["requested_urls"][i]
                 )
                 self.class_info["assignments"][assignment_num]["requested_urls"].pop(i)
             save_assignments()
-            await msg.channel.send("Successfully added links to Accepted URL's!")
+            await msg.channel.send("Successfully added links to Relevant Links!")
             return
         # if user wants to deny, remove from the pending list
-        if accept_or_deny.casefold() == "deny":
+        if approve_or_deny.casefold() == "deny":
             for i in link_choice:
                 self.class_info["assignments"][assignment_num]["requested_urls"].pop(i)
             save_assignments()
             await msg.channel.send("Successfully removed links from the queue!")
             return
 
+    async def wait_for_reply(self, member, channel):
+        try:
+            response = await client.wait_for(
+                "message",
+                check=lambda m: m.author == member and m.channel == channel,
+                timeout=60,
+            )
+            # if no response is given within 60 seconds
+        except:
+            await channel.send("Error: You took too long to respond")
+            response = None
+            return response
+            # Returning .content because response == to all details of the response including date,id's etc.
+            # We want just the content
+        return response.content
+
     async def run(self, msg: discord.Message, args: str):
-        # chooses random color for embed messages
-        color = [
-            0x000000,  # black
-            0x00FF00,  # lime/bright green
-            0xFF0000,  # red
-            0x38E31F,  # green
-            0xA434EB,  # purple
-            0x0082FF,  # blue
-            0xE08200,  # orange/light brown
-            0xFF7DFF,  # pink
-            0xFEFFFF,  # white
-        ]
-        # choice() is from random library
-        randomColor = choice(color)
-        # if user types [class_name] and thats it
+        # if user types [class_name] and thats it ex: $211
         if not args:
             # call long_help command for this command
             await help_cmd.get_command_info(self, msg.channel, msg.author)
             return
-
         if (
             args in self.class_info["assignments"]
         ):  # to print embed message of the specified assignment
@@ -147,16 +187,17 @@ class Assignment_Command(Bot_Command):
             print(len(assignment["description"]))
             print(assignment["title"])
             # description is pulled from the JSON File
+            color = no_duplicate_random_color.get_color()
             description = discord.Embed(
                 title=assignment["title"],
                 url=assignment["url"],
                 description=assignment["description"],
-                color=randomColor,
+                color=color,
             )
             # extra embed stuff
             description.add_field(
-                name=assignment["name"],
-                value=f"Click [here]({self.class_info['website']}) to go to professor {self.class_info['professor']}'s site.",
+                name=f"{self.class_info['professor']}'s Website",
+                value=f"Click [here]({self.class_info['website']}) to go to professor {self.class_info['professor']}'s website.",
                 inline=False,
             )
             # extra embed stuff
@@ -165,36 +206,27 @@ class Assignment_Command(Bot_Command):
             )
             await msg.channel.send(embed=description)
             urls = ""
-            # goes through each added url and then displays it in a seperate embed message
-            for url in assignment["added_urls"]:
+            # goes through each relevant link and then displays it in a seperate embed message
+            for url in assignment["relevant_links"]:
                 urls += f"[{url['title']}]({url['url']})\n"
             # if there are no urls
             if not urls:
                 return
             else:
-                added_urls_list = discord.Embed(
-                    title="Added Urls", description=urls, color=randomColor
+                relevant_links_list = discord.Embed(
+                    title="Relevant Links", description=urls, color=color
                 )
-                await msg.channel.send(embed=added_urls_list)
-        # this shouldn't be in here but wtvr
-        elif args == "test":
-            print(choice(color))
-            embed = discord.Embed(
-                title="Test Song",
-                url="https://www.youtube.com/watch?v=KmI2WhkDQqg",
-                description="[This is a cool song](https://www.youtube.com/watch?v=KmI2WhkDQqg)",
-                color=choice(color),
-            )
-            embed.set_footer(text="This song is cool")
-            await msg.channel.send(embed=embed)
-        # this will spam a chat, also not sure why this is here
-        elif args == "echo":
-            await msg.channel.send("$assignment echo")
+                await msg.channel.send(embed=relevant_links_list)
+
         # adding relevant urls to specified assignments
-        elif args.casefold().startswith("add "):
+        # Syntax: $211 addurl 1 https://example.com Example
+        elif args.casefold().startswith("addurl "):
             # splits the command string into parts divided by a space
-            split_args = args.split(" ")
-            print(len(split_args))
+            temp_split_args = args.split(" ")
+            split_args = []
+            for arg in temp_split_args:
+                if arg != "":
+                    split_args.append(arg)
             if len(split_args) < 4:
                 await msg.channel.send(
                     "Error: Please fill out the command correctly! Type $[class_name] to learn how to use commands"
@@ -202,7 +234,7 @@ class Assignment_Command(Bot_Command):
                 return
             if split_args[1] not in self.class_info["assignments"]:
                 await msg.channel.send(
-                    "The assignment you are trying to edit does not exist, please check the assignment you want to edit actually exists"
+                    "Error: The assignment you are trying to edit does not exist, please check the assignment you want to edit actually exists"
                 )
                 return
             """split_args[0] = add
@@ -210,77 +242,96 @@ class Assignment_Command(Bot_Command):
                split_args[2] = link.com
                split_args[3] = title"""
             assignment_num = split_args[1]
+            print(assignment_num)
             url_add = split_args[2]
-            # check if url is a valid url i.e starts with https://
-            if not url_add.startswith("http"):
+            # check if url is a valid url i.e starts with https// and has something after https://
+
+            if (
+                not url_add.casefold().startswith("http://")
+                and len(url_add) > len("http://")
+            ) and (
+                not url_add.casefold().startswith("https://")
+                and len(url_add) > len("https://")
+            ):
                 await msg.channel.send(
-                    "Please enter a proper link. Example: https://www.example.com **or** https://example.com"
+                    "Error: Please enter a proper link. Example: http://example.com **or** https://example.com"
                 )
                 return
             title_add = " ".join(split_args[3:])
-
+            if len(title_add) > 100:
+                await msg.channel.send(
+                    "Error: Title cannot be more than 100 characters"
+                )
+                return
             # checks for duplicate urls in queue
-            for i in self.class_info["assignments"][assignment_num]["requested_urls"]:
-                if url_add == i["url"]:
+            for requested_dict in self.class_info["assignments"][assignment_num][
+                "requested_urls"
+            ]:
+                if url_add == requested_dict["url"]:
                     await msg.channel.send(
-                        "The link you are trying to add is already in the queue, please wait for a mod to review it"
+                        "Error: The link you are trying to add is already in the queue, please wait for a mod to review it"
                     )
                     return
                 # checks for duplicate titles in queue
-                elif title_add == i["title"]:
+                elif title_add == requested_dict["title"]:
                     await msg.channel.send(
-                        "The title you are trying to set is already used for another link, please use another title."
+                        "Error: The title you are trying to set for this link is already used for another link, please use another title."
                     )
                     return
             # checks for duplicate links already added
-            for i in self.class_info["assignments"][assignment_num]["added_urls"]:
-                if url_add == i["url"]:
+            for link_dict in self.class_info["assignments"][assignment_num][
+                "relevant_links"
+            ]:
+                if url_add == link_dict["url"]:
                     await msg.channel.send(
-                        f"The link you are trying to add has already been added to the title: \"{i['title']}\""
+                        f"Error: The link you are trying to add has already been added to another link in this assignment titled: **{link_dict['title']}**"
                     )
                     return
                 # checks for duplicate titles already added
-                elif title_add == i["title"]:
+                elif title_add == link_dict["title"]:
                     await msg.channel.send(
-                        "The title you are trying to set is already used for another link, please use another title."
+                        "Error: The title you are trying to set is already used for another link for this assignment, please use another title."
                     )
                     return
-            # This is what will be added to queue and what will be accepted/denied
-            new_add_assignment = {
+            # This is what will be added to queue and what will be approveed/denied
+            new_added_url = {
                 "title": title_add,
                 "url": url_add,
                 "user": msg.author.id,
             }
             # no need for queue if admin tries to add something
             if msg.author.guild_permissions.administrator:
-                self.class_info["assignments"][assignment_num]["added_urls"].append(
-                    new_add_assignment
+                self.class_info["assignments"][assignment_num]["relevant_links"].append(
+                    new_added_url
                 )
                 await msg.channel.send(
-                    "Since you are an admin, this got added to Added URLs right away"
+                    "Since you are an admin, this got added to Relevant Links right away"
                 )
                 save_assignments()
                 return
             # adds to queue
             self.class_info["assignments"][assignment_num]["requested_urls"].append(
-                new_add_assignment
+                new_added_url
             )
             # saves JSON file so queue doesnt get erased if bot crashes
             save_assignments()
             await msg.channel.send(
                 "Your request to add this link will be reviewed by an admin."
             )
-        # to check whats in queue for specified class (needs to be admin)
-        elif (
-            args.casefold().startswith("pending ")
-            and msg.author.guild_permissions.administrator
-        ):
 
+        # to check whats in queue for specified class (needs to be admin)
+        # Syntax: $211 pending 1
+        elif args.casefold().startswith("pending "):
+            if not msg.author.guild_permissions.administrator:
+                await msg.channel.send(
+                    "Error: You need administrator permissions to use this command!"
+                )
+                return
             assignment_num = args[len("pending") :].strip()
             # checks if assignment number exists
             if assignment_num not in self.class_info["assignments"]:
                 await msg.channel.send(
-                    "The assignment you are trying to edit does not exist, please check the assignment you want to edit actually exists"
+                    "Error: The assignment you are trying to view does not exist, please check the assignment you want to view actually exists"
                 )
                 return
             # creates list of everything that pending to print/use later
@@ -299,60 +350,73 @@ class Assignment_Command(Bot_Command):
                 url += 1
                 pending_list += f"**{url}**\n[{i['title']}]({i['url']})\n"
             pending_links = discord.Embed(
-                title="Requested URLs", description=pending_list, color=randomColor
+                title="Requested URLs",
+                description=pending_list,
+                color=no_duplicate_random_color.get_color(),
             )
             await msg.channel.send(embed=pending_links)
 
-            # waits for user to accept/deny a link(s)
-            await self.accept_deny_multiple(msg, assignment_num)
+            # waits for user to approve/deny a link(s)
+            await self.approve_deny_multiple(msg, assignment_num)
 
-        # to remove a link from the accepted links list
-        elif args.casefold().startswith("remove "):
+        # removes a url from the relevant links list for an assignment
+        # Syntax: $211 removeurl 1 title
+        elif args.casefold().startswith("removeurl "):
+            # to remove a link from the relevant links list
             # must have admin permissions
             if msg.author.guild_permissions.administrator:
-                split_args = args.split(" ")
+                temp_split_args = args.split(" ")
+                split_args = []
+                for arg in temp_split_args:
+                    if arg != "":
+                        split_args.append(arg)
 
                 """split_args[0] = remove
                 split_args[1] = assignment#
                 split_args[2] = title """
 
                 assignment_num = split_args[1]
+                if assignment_num not in self.class_info["assignments"]:
+                    await msg.channel.send(
+                        "Error: The assignment you are trying to view does not exist, please check the assignment you want to view actually exists"
+                    )
+                    return
+                print(assignment_num)
                 # combine title if there are spaces
                 title = " ".join(split_args[2:])
                 # loops through list
-                for i in self.class_info["assignments"][assignment_num]["added_urls"]:
+                for i in self.class_info["assignments"][assignment_num][
+                    "relevant_links"
+                ]:
                     # if it finds a matching title
                     if title == i["title"]:
                         # remove it form the list
                         self.class_info["assignments"][assignment_num][
-                            "added_urls"
+                            "relevant_links"
                         ].remove(i)
                         # confirm that a match was found and was deleted
                         await msg.channel.send(
-                            f"Removed **{i['title']}** from Added URLs"
+                            f"Removed **{i['title']}** from Relevant Links"
                         )
                         # save JSON File
                         save_assignments()
                         return
                 await msg.channel.send(
-                    f" **{title}** not found in Added URLs. This feature is case sensitive. Make sure you typed the title exactly as it is"
+                    f"Error: **{title}** not found in Relevant Links. This feature is case sensitive. Make sure you typed the title exactly as it is"
                 )
                 return
             # if a non-admin tries to run the command
             else:
                 await msg.channel.send(
-                    "You need administrator permissions to use this command"
+                    "Error: You need administrator permissions to use this command!"
                 )
                 return
 
+        # gives the solution to an assignment (solutions should be added after their due date)
         # $211 solution 1
         elif args.casefold().startswith("solution "):
-            # here using (" ", 1) to only split once at a " ".
-            split_args = args.split(" ", 1)
-            """split_args[0] = solution
-               split_args[1] = assignment# """
             # make solution_choice = assignment# i.e everything after "solution "
-            solution_choice = split_args[1]
+            solution_choice = args[len("solution") :].strip()
             # checks if assignment# is a number
             if not solution_choice.isdigit():
                 await msg.channel.send(
@@ -361,8 +425,11 @@ class Assignment_Command(Bot_Command):
                 return
             # check if the assignment solution exists in $class_name folder using "pathway/self.name" (self.name = $211 or $212 command)
             for i in (solutions_path / self.name).iterdir():
+                # gets rid of .cpp Ex: 1.cpp -> 1
                 if i.name.split(".")[0] == solution_choice:
+                    # opens the file that was matched with i.name.split (ex: 1.cpp) as a variable
                     with i.open("r") as assignment_solution:
+                        # send the file as an embed msg
                         await msg.channel.send(
                             file=discord.File(
                                 assignment_solution,
@@ -376,23 +443,250 @@ class Assignment_Command(Bot_Command):
             )
             return
 
-        # $211 solution 1
+        # to add an assignment to a class
+        # $211 add 1
+        elif args.casefold().startswith("add "):
+            # if the the user is not an admin/has admin permissions
+            if not msg.author.guild_permissions.administrator:
+                await msg.channel.send(
+                    "Error: You cannot use this command since you are not admin!"
+                )
+                return
+            # get the number of the assignment they want to add by getting everything after "add"
+            assignment_num = args[len("add") :].strip()
+            # checks if the assignemnt they want to add is a number (i.e number of the assignment)
+            if not assignment_num.isdigit():
+                await msg.channel.send(
+                    "Error: You must provide the number for the assignment you are trying to add! Example: $211 add **10** or $220 add **7**"
+                )
+                return
+            # checks to see if the assignment number already exists in the assignments list
+            if assignment_num in self.class_info["assignments"]:
+                await msg.channel.send(
+                    f"Error: This assignment already exists! Type **${self.name} {assignment_num}** to view it."
+                )
+            # if it doesn't exist in the assignments list, we create it
+            if assignment_num not in self.class_info["assignments"]:
+                # this is the standard layout of every assignment
+                new_assingnment = {
+                    "title": "",
+                    "url": "",
+                    "description": "",
+                    "relevant_links": [],
+                    "requested_urls": [],
+                }
+                # go through each key (i.e "title", "url", "description", etc) but only
+                # 3 times so that they can't add a relevant link or add a requested url straight away
+                key_counter = 0
+                for key in new_assingnment:
+                    if key_counter == 3:
+                        break
+                    await msg.channel.send(f"Please enter a {key} for this assignment")
+                    # get their input for either title, url or description
+                    key_value = await self.wait_for_reply(msg.author, msg.channel)
+                    if key_value == None:
+                        return
+                    # if they are making a title (i.e key_counter == 0) and if the title is longer than 100 characters, send an error message
+                    if key_counter == 0 and len(key) > 100:
+                        await msg.channel.send(
+                            "Error: Title cannot be more than 100 characters"
+                        )
+                        return
+                    # if they are making a url (i.e key_counter == 0) and it is not a clickable link, send an error message
+                    if (
+                        (
+                            not key_value.casefold().startswith("http://")
+                            and len(key_value) > len("http://")
+                        )
+                        and (
+                            not key_value.casefold().startswith("https://")
+                            and len(key_value) > len("https://")
+                        )
+                        and key_counter == 1
+                    ):
+                        await msg.channel.send(
+                            "Error: Please enter a proper link that starts with either **http://** or **https://** Example: http://example.com **or** https://example.com"
+                        )
+                        return
+                    # set their edits to what they wanted to edit if it passes all tests
+                    new_assingnment[key] = key_value
+                    key_counter += 1
+                # save assignments to update the json file in real time
+                self.class_info["assignments"][assignment_num] = new_assingnment
+                save_assignments()
+                await msg.channel.send(
+                    f"Done! You can view the added assingment by typing **${self.name} {assignment_num}**. If you want to edit this assignment in case you made a mistake, type **${self.name} edit {assignment_num}**."
+                )
+                return
+
+        # allows admin/user with admin permissions to edit assignments without having to open the json file (i.e in discord)
+        # 211 edit 1
+        elif args.casefold().startswith("edit "):
+            # if the user is not an admin/has admin permissions
+            if not msg.author.guild_permissions.administrator:
+                await msg.channel.send(
+                    "Error: You cannot use this command since you are not admin!"
+                )
+                return
+            # get the number of the assignment they want to add by getting everything after "add"
+            assignment_num = args[len("edit") :].strip()
+            # checks if the assignemnt they want to edit is a number (i.e number of the assignment)
+            if not assignment_num.isdigit():
+                await msg.channel.send(
+                    "Error: You must provide the number for the assignment you are trying to edit! Example: $211 edit **10** or $220 edit **7**"
+                )
+                return
+            # if the assignment does not exist in that class (i.e they can't edit it)
+            if assignment_num not in self.class_info["assignments"]:
+                await msg.channel.send(
+                    "Error: The assignment you are trying to edit has not been added yet!"
+                )
+                return
+            # if the assignment exists in the class, ask what they want to edit (Note* users can only edit either the title, url or description of an assignment)
+            if assignment_num in self.class_info["assignments"]:
+                edit_list = ["title", "url", "description"]
+                await msg.channel.send(
+                    f"What would you like to edit from **assignment {assignment_num}**?"
+                )
+                # asks them what they want to edit using the edit_list (user_select_from_list is a function from utils.py)
+                # edit_choice can either be a title, url or description
+                edit_choice = await user_select_from_list(
+                    msg.channel,
+                    edit_list,
+                    lambda x: x,
+                    msg.author,
+                    f"Edit Options For Assignment {assignment_num}",
+                    timeout=30,
+                )
+                # if what is already stored in their edit_choice for the assignment is longer than 1900 characters,
+                # display another message because of discord's 2000 word count limit (This is done because the bot won't be able to display edit_choice properly)
+                if (
+                    len(self.class_info["assignments"][assignment_num][edit_choice])
+                    >= 1900
+                    or len(self.class_info["assignments"][assignment_num][edit_choice])
+                    == 0
+                ):
+                    await msg.channel.send(
+                        f"Please enter a new {edit_choice} for this assignment."
+                    )
+                # if current edit_choice is less than 1900 characters, print default message (includes preview of existing edit_choice)
+                else:
+                    await msg.channel.send(
+                        f"The current {edit_choice} for assignment {assignment_num} is: **{self.class_info['assignments'][assignment_num][edit_choice]}**\n\nPlease enter the new {edit_choice} for this assignment."
+                    )
+                # if the new title they are trying to add is more than 100 characters, send an error message
+                edit = await self.wait_for_reply(msg.author, msg.channel)
+                if edit_choice == "title":
+                    if len(edit) > 100:
+                        await msg.channel.send(
+                            "Error: Title cannot be more than 100 characters"
+                        )
+                        return
+                # if the new url they are trying to add is not clickable (i.e does not start with https:// or http://), send an error message
+                if edit_choice == "url":
+                    if (
+                        not edit.casefold().startswith("http://")
+                        and len(edit) > len("http://")
+                    ) and (
+                        not edit.casefold().startswith("https://")
+                        and len(edit) > len("https://")
+                    ):
+                        await msg.channel.send(
+                            "Error: URL is not a valid link! Make sure the URL starts with **http://** or **https://** Example: http://example.com/ or https://example.com/"
+                        )
+                        return
+                # if the new edit is the same as the old one, send an error message
+                if edit == self.class_info["assignments"][assignment_num][edit_choice]:
+                    await msg.channel.send(
+                        f"Error: You are trying to edit the {edit_choice} with the same {edit_choice} it already had!"
+                    )
+                    return
+                # if the new edit is the same as one for another assignment in the same class (i.e same title, url, or description as another assignment )
+                for assignment_number in self.class_info["assignments"].values():
+                    if assignment_number[edit_choice] == edit:
+                        await msg.channel.send(
+                            f"Error: The {edit_choice} you are trying to add is the same {edit_choice} for assignment **{assignment_number}** in the **{self.class_info}** class!"
+                        )
+                        return
+                # if the length of the edit is more than 1900 characters (i.e bot can't display a preview), send another message
+                if len(edit) > 1900:
+                    await msg.channel.send(
+                        "Since your edit is longer than the character limit, I cannot show you a preview of your edit. Please make sure your edits are correct before accepting them!"
+                    )
+                # if the length of the edit is less that 1900 characters (i.e bot can display preview), send defualt message
+                else:
+                    await msg.channel.send(
+                        f"Assignment {assignment_num}'s {edit_choice} will look like this:\n **{edit}**\n Is this okay?"
+                    )
+                # list that the user chooses either "Accept or Deny" from
+                accept_deny = ["Accept", "Deny"]
+                apply_choice = await user_select_from_list(
+                    msg.channel,
+                    accept_deny,
+                    lambda x: x,
+                    msg.author,
+                    "Accept or Deny",
+                    timeout=60,
+                )
+                # if they chose "Accept", save and apply changes made
+                if apply_choice == "Accept":
+                    self.class_info["assignments"][assignment_num][edit_choice] = edit
+                    save_assignments()
+                    await msg.channel.send(
+                        f"Edits have been accepted and applied! To view your changed, type **${self.name} {assignment_num}**."
+                    )
+                    return
+                # if they chose "Deny", make no changes to the original assignment
+                else:
+                    await msg.channel.send(
+                        "Edits have been denied! No changed were made."
+                    )
+                    return
+            return
+
+        # Send a list of all existing/added assignments for the class (self.name) listed in self.class_info["assignments"]
+        # Syntax: $211 assignments
+        elif args.casefold() == "assignments":
+            # for loop lambda function that sorts assignments in order (this is done incase assignments weren't added in order)
+            # ex: added in order: 1, 2, 3, 5, 4, 9, 8, 7 ------> displays in order: 1, 2, 3, 4, 5, 6, 7, 8, 9
+            # only works numerically, not with any other characters (i.e: A, a, $, -, +) | Note* converts number char into type int
+            assignments_list = ""
+            for assignment_num in sorted(
+                self.class_info["assignments"].keys(), key=lambda num: int(num)
+            ):
+                # adds sorted numbers to a list
+                assignments_list += f"**{assignment_num}**\n{self.class_info['assignments'][assignment_num]['title']}\n"
+            # if there are no assignments for that class (i.e nothing in assignments_list), send a message
+            if len(assignments_list) == 0:
+                await msg.channel.send(
+                    f"There are no assignments added for class **{self.name}**"
+                )
+                return
+            assignments_embed = discord.Embed(
+                color=0x00A7FE,  # cyan
+            )
+            # using the embed field to increase character limit to 6000 and printing the assignments_list using the field
+            assignments_embed.add_field(
+                name=f"{self.name} Existing Assignments", value=f"{assignments_list}"
+            )
+            await msg.channel.send(embed=assignments_embed)
 
         # if they try to view an assignment that doesnt exist
+        # $869 %^7
         else:
             await msg.channel.send(
-                "Either you typed in a command wrong, or the assignment you are looking for does not exist or has not yet been added to the bot. If this is the case, ping a mod.\nYou can use $[class_name] to get help with how to use this command. Example $211 **or** $212"
+                "Error: Either you typed in a command wrong, or the assignment you are looking for does not exist or has not yet been added to the bot. If this is the case, ping a mod.\nYou can use $[class_name] to get help with how to use this command. Example **$211** or **$212**"
             )
 
 
-# creates the command for every class (211 or 212) thats in the JSON File
+# creates the command for every class dictionary (211 or 212) thats in the JSON File
 if not assignments_path.exists():
     save_assignments()
 else:
 
     with assignments_path.open() as file:
         assignments = json.load(file)
-    # for every class name / key (211 or 212) in the JSON file
     for class_name in assignments:
         # add command to commands list, commands list is from cmd.py
         commands.append(Assignment_Command(class_name, assignments[class_name]))
+        # assignments[class_name] = class_info ^ at the start

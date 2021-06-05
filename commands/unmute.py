@@ -1,11 +1,15 @@
 from cmd import Bot_Command
+from utils import get_member, format_max_utf16_len_string
+from pathlib import Path
 
 import discord
-from utils import get_member
+import json
 
 class Unmute_Command(Bot_Command):
     name = "unmute"
-    
+
+    mute_log = Path("data/mute_log.json")
+
     short_help = "Unmutes user"
 
     long_help = f"""Unmutes the specified user.
@@ -29,26 +33,60 @@ class Unmute_Command(Bot_Command):
 
                 #for server unmutes
                 if parsed_args.lower() == "all":
-                    for m in guild.members:
-                        await m.remove_roles(mute)
-                    print("Unmuted all members")
-                    await msg.channel.send("Unmuted all members")
+                    try:
+                        for m in guild.members:
+                            #remove the mute role from the member and remove them from the log file
+                            await m.remove_roles(mute)
+                            with self.mute_log.open("w") as file:
+                                log = json.load(file)
+                                log[str(guild.id)].pop(str(m.id))
+                                json.dump(log, file, indent=4)
+                        print("Unmuted all members")
+                        await msg.channel.send("Unmuted all members")
+                    except Exception as e:
+                        print(e)
+                        print("There was an error unmuting all members")
+                        await msg.channel.send("Could not unmute all members")
                     return
 
+                #get the member to be unmuted
                 member = await get_member(msg.channel, parsed_args, responder=msg.author)
+                
+                #if member could not be found
                 if member is None:
-                    print(f"User @\{parsed_args} could not be found")
-                    await msg.channel.send(f"User @\{parsed_args} could not be found")
+                    print(f"User @{parsed_args} could not be found")
+                    await msg.channel.send(
+                        format_max_utf16_len_string(
+                            "User **@\{}** could not be found",
+                            parsed_args
+                        )
+                    )
                     return
+
                 #if member is muted
                 if mute in member.roles:
-                    #removes role from member
+                    #remove role from member and remove member from log file
                     await member.remove_roles(mute)
+                    with self.mute_log.open("w") as file:
+                        log = json.load(file)
+                        log[str(guild.id)].pop(str(member.id))
+                        json.dump(log, file, indent=4)
+
                     print(f"User @{member} was unmuted")
-                    await msg.channel.send(f"User {member.mention} was unmuted")
+                    await msg.channel.send(
+                        format_max_utf16_len_string(
+                            "User {} was unmuted",
+                            member.mention
+                        )
+                    )
                 else:
                     print(f"User @{member} is not muted")
-                    await msg.channel.send(f"User @\{member} is not muted")
+                    await msg.channel.send(
+                        format_max_utf16_len_string(
+                            "User **@\{}** is not muted",
+                            member
+                        )
+                    )
             #if user didnt enter any arguments
             else:
                 print("Please specify a user.")

@@ -1,6 +1,6 @@
 from cmd import Bot_Command
 from pathlib import Path
-from utils import get_member
+from utils import get_member, format_max_utf16_len_string
 from commands.unmute import command as unmute
 from main import bot_prefix
 
@@ -16,10 +16,10 @@ class Mute_Command(Bot_Command):
     default_time = "10m"
 
     mute_log = Path("data/mute_log.json")
-    
+
     short_help = "Mutes user for specified time"
 
-    long_help = f"""Mutes the specified user for specified time. Default time is {default_time}. 
+    long_help = f"""Mutes the specified user for specified time. Default time is {default_time}.
     Arguments:
     `User`
     `Time: [XXwXXdXXhXXm] (optional)`
@@ -77,7 +77,7 @@ class Mute_Command(Bot_Command):
                         await channel.send("Could not mute everyone")
                         return
                     print(f"Muted @everyone")
-                    await channel.send(f"Muted all members")
+                    await channel.send(f"Muted all members for {self.date_string(parsed_args[1:])}")
                     
                     #sleep until the time to unmute everyone
                     await discord.utils.sleep_until(unmute_at)
@@ -93,11 +93,15 @@ class Mute_Command(Bot_Command):
                     #if member does not exist in this server
                     if member is None:
                         print(f"User @{parsed_args[0]} could not be found")
-                        await channel.send(f"User **\@{parsed_args[0]}** could not be found")
+                        await channel.send(
+                            format_max_utf16_len_string(
+                                "User **\@{}** could not be found",
+                                parsed_args[0]
+                            )
                     else:
                         await self.log_mute(member, mute, str(unmute_at))
                         print(f"Muted @{member}")
-                        await channel.send(f"Muted **{member}**")
+                        await channel.send(f"Muted **{member}** for {self.date_string(parsed_args[1:])}")
 
                         #waits for the specified time and then removes the role from user
                         await discord.utils.sleep_until(unmute_at)
@@ -152,6 +156,22 @@ class Mute_Command(Bot_Command):
     #adds the mute duration onto the current datetime
     def date_conversion(self, time: list) -> datetime.datetime:
         return datetime.datetime.now(tz=datetime.timezone(datetime.timedelta(hours=-4))) + datetime.timedelta(weeks=time[0], days=time[1], hours=time[2], minutes=time[3])
+
+
+
+
+
+    def date_string(self, time: list) -> str:
+        out = ""
+        if list[0]:
+            out += f"{list[0]} weeks "
+        if list[1]:
+            out += f"{list[1]} days "
+        if list[2]:
+            out += f"{list[2]} hours "
+        if list[3]:
+            out += f"{list[3]} minutes"
+        return out
 
 
 
