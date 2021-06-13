@@ -731,3 +731,19 @@ async def user_select_from_list(
                 "Error: Option `{}` is out of bounds.", response.content
             )
             await channel.send(error_message, delete_after=7)
+    
+async def wait_for_reply(member, channel):
+    try:
+        response = await client.wait_for(
+            "message",
+            check=lambda m: m.author == member and m.channel == channel,
+            timeout=60,
+        )
+        # if no response is given within 60 seconds
+    except:
+        await channel.send("Error: You took too long to respond")
+        response = None
+        return response
+        # Returning .content because response == to all details of the response including date,id's etc.
+        # We want just the content
+    return response.content
