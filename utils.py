@@ -1,16 +1,10 @@
 from core import client
 
 import discord
+import asyncio
 import math
 from re import compile as re_compile
 from typing import Callable, Iterable, Optional
-
-re_user_ping = re_compile(r"<@!?(\d{18})>")
-re_user_discriminator = re_compile(r"(.+)#(\d{4})")
-
-re_channel_mention = re_compile(r"<#(\d{18})>")
-
-re_role_mention = re_compile(r"<@&(\d{18})>")
 
 
 def utf16_len(s: str) -> int:
@@ -297,14 +291,18 @@ async def roles(msg: discord.Message):
             try:
                 r = discord.utils.get(msg.author.guild.roles, name=name)
                 await msg.author.add_roles(r)
-            except:
+            except (discord.HTTPException, discord.Forbidden):
                 print(f"no role called {role[1:]}")
         elif role.startswith("-"):
             try:
                 r = discord.utils.get(msg.author.guild.roles, name=name)
                 await msg.author.remove_roles(r)
-            except:
+            except (discord.HTTPException, discord.Forbidden):
                 print(f"{msg.author} doesn't have the role {role[1:]}")
+
+
+_re_user_ping = re_compile(r"<@!?(\d{18})>")
+_re_user_discriminator = re_compile(r"(.+)#(\d{4})")
 
 
 async def get_member(
@@ -358,14 +356,14 @@ async def get_member(
             return out
 
     # Try to parse `m` as a member mention
-    user_ping = re_user_ping.fullmatch(m)
+    user_ping = _re_user_ping.fullmatch(m)
     if user_ping:
         out = channel.guild.get_member(int(user_ping.group(1)))
         if out is not None:
             return out
 
     # Try to parse `m` as a full username, including the discriminator
-    user_discriminator = re_user_discriminator.fullmatch(m)
+    user_discriminator = _re_user_discriminator.fullmatch(m)
     if user_discriminator:
         out = channel.guild.get_member_named(m)
         if out is not None:
@@ -418,6 +416,9 @@ async def get_member(
             title="Select user:",
             timeout=timeout,
         )
+
+
+_re_channel_mention = re_compile(r"<#(\d{18})>")
 
 
 async def get_channel(
@@ -483,7 +484,7 @@ async def get_channel(
             return out
 
     # Try to parse `c` as a channel mention
-    channel_mention = re_channel_mention.fullmatch(c)
+    channel_mention = _re_channel_mention.fullmatch(c)
     if channel_mention:
         out = channel.guild.get_channel(int(channel_mention.group(1)))
         if out is not None and include_channel(out):
@@ -526,6 +527,9 @@ async def get_channel(
             title="Select channel:",
             timeout=timeout,
         )
+
+
+_re_role_mention = re_compile(r"<@&(\d{18})>")
 
 
 async def get_role(
@@ -578,7 +582,7 @@ async def get_role(
             return out
 
     # Try to parse `r` as a role mention
-    role_mention = re_role_mention.fullmatch(r)
+    role_mention = _re_role_mention.fullmatch(r)
     if role_mention:
         out = channel.guild.get_role(int(role_mention.group(1)))
         if out is not None:
@@ -711,7 +715,7 @@ async def user_select_from_list(
                 check=check_user_int_response,
                 timeout=timeout,
             )
-        except:
+        except asyncio.TimeoutError:
             await channel.delete_messages(choice_messages)
             await channel.send(
                 "Error: Timed out waiting for user input.", delete_after=20
@@ -723,7 +727,7 @@ async def user_select_from_list(
             await channel.delete_messages(choice_messages)
             try:
                 await response.delete()
-            except discord.errors.NotFound:
+            except discord.NotFound:
                 pass
             return options[int_response - 1]
         else:
@@ -731,19 +735,140 @@ async def user_select_from_list(
                 "Error: Option `{}` is out of bounds.", response.content
             )
             await channel.send(error_message, delete_after=7)
-    
-async def wait_for_reply(member, channel):
+
+
+async def wait_for_reply(
+    member: discord.Member,
+    channel: discord.TextChannel,
+    timeout: int = 60,
+    error_message: Optional[str] = "Error: You took too long to respond",
+) -> Optional[str]:
+    """Gets the message content of the next message sent by `member` in
+    `channel`. If no response is received in `timeout` seconds, `error_message`
+    is sent to `channel` if it is not `None` and the function returns `None`.
+    """
     try:
         response = await client.wait_for(
             "message",
             check=lambda m: m.author == member and m.channel == channel,
-            timeout=60,
+            timeout=timeout,
         )
+        return response.content
+    except asyncio.TimeoutError:
         # if no response is given within 60 seconds
-    except:
-        await channel.send("Error: You took too long to respond")
-        response = None
-        return response
+        if error_message is not None:
+            await channel.send(error_message)
+        return None
         # Returning .content because response == to all details of the response including date,id's etc.
         # We want just the content
-    return response.content
+
+
+_re_arg_splitter = re_compile(
+    #       Match text in quotes as a single group
+    #       V                          Match any number of double backslashes so that \" is a valid quote escape but \\" isn't.
+    #       V                          V          Match \" within quotes
+    #       V                          V          V        Match content within quotes
+    #       V                          V          V        V          Match closing quote
+    #       V                          V          V        V          V               Match unquoted content
+    #       V                          V          V        V          V               V           End match with the end of the
+    #       V                          V          V        V          V               V           string, a comma with any amount
+    #       V                          V          V        V          V               V           of whitespace, or whitespace.
+    #       V                          V          V        V          V               V           V
+    r'\s*(?:(?:\"(?P<quoted_text>(?:(?:(?:\\\\)*)|(?:\\\")|(?:[^"]))*)\")|(?:(?P<text>[^\s,，]+)))(?P<tail>$|(?:\s*[,，]\s*)|(?:\s+))'
+)
+_re_remove_escaped_quote = re_compile(r'((?:[^\\]|^)(?:\\\\)*)\\"')
+
+
+def split_args(args: str, treat_comma_as_space: bool = False) -> list[str]:
+    """Splits a string of arguments into a list of arguments. Arguments are
+    separated by spaces, unless `treat_comma_as_space` is `True` and `args`
+    contains a comma not enclosed in quotes, in which case arguments are
+    separated by commas. Arguments can also be grouped using quotes to include
+    spaces or commas without being separated. Quotes escaped using a backslash
+    can be included in quoted text. Double backslashes are also replaced with
+    single backslashes.
+
+    Examples
+    -----------
+    .. code-block:: python3
+        split_args('A B C D') == ['A', 'B', 'C', 'D']
+
+    .. code-block:: python3
+        split_args('A B, C D', False) == ['A B', 'C D']
+
+    .. code-block:: python3
+        split_args('A B, C D', True) == ['A', 'B', 'C', 'D']
+
+    .. code-block:: python3
+        split_args('A "B C" D', False) == ['A', 'B C', 'D']
+
+    .. code-block:: python3
+        # Single escaped backslash
+        split_args('A "B\\"C" D', False) == ['A', 'B"C', 'D']
+    """
+    comma_separated = False
+
+    # Get matches
+    matches = []
+    for m in _re_arg_splitter.finditer(args):
+        matches.append(m)
+        comma_separated = comma_separated or (
+            not treat_comma_as_space
+            and m.group("tail")
+            and not m.group("tail").isspace()  # Checks for comma
+        )
+
+    # Matches can contain their arg in the groups "text" or "quoted_text"
+    if not comma_separated:
+        ret = [
+            m.group("text") if m.group("text") is not None else m.group("quoted_text")
+            for m in matches
+        ]
+    else:
+        # If args are comma separated, group all matches in between commas
+        # into a single string.
+        ret = []
+        combine = []  # A list of matches that appear together before a comma
+        for match in matches:
+            if match.group("tail") and not match.group("tail").isspace():
+                # If match ends with a comma, combine it with previous matches
+                # without commas into one single arg.
+
+                if match.group("text"):
+                    ret.append(
+                        "".join(m.group(0) for m in combine) + match.group("text")
+                    )
+                elif not combine:
+                    # If the match contains text in quotes and there are no
+                    # previous matches to combine it with, add only the text
+                    # inside of the quotes to the list of arguments.
+                    ret.append(match.group("quoted_text"))
+                else:
+                    ret.append(
+                        "".join(m.group(0) for m in combine)
+                        + match.group("quoted_text")
+                    )
+                combine = []
+            else:
+                combine.append(match)
+        if combine:
+            if len(combine) == 1 and combine[0].group("quoted_text") is not None:
+                # If there is only one match that contains text in quotes add
+                # only the text inside of the quotes to the list of arguments.
+                last_arg = combine[0].group("quoted_text")
+            else:
+                # Otherwise, combine all remaining matches into one argument
+                last_arg = "".join(m.group(0) for m in combine[:-1])
+                # Exclude the tail of the last match
+                last_match = combine[-1]
+                last_arg += (
+                    last_match.group("text")
+                    if last_match.group("text") is not None
+                    else last_match.group("quoted_text")
+                )
+            ret.append(last_arg)
+
+    # Replace \" with " and \\ with \
+    ret = [_re_remove_escaped_quote.sub(r'\1"', s).replace("\\\\", "\\") for s in ret]
+
+    return ret

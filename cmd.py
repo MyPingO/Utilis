@@ -355,11 +355,11 @@ class Bot_Commands:
         command = command.casefold()
         try:
             return self._global_commands[command]
-        except:
+        except KeyError:
             try:
                 if guild is not None:
                     return self._guild_commands[self._get_guild_id(guild)][command]
-            except:
+            except KeyError:
                 pass
         return None
 
@@ -379,7 +379,7 @@ class Bot_Commands:
                 return False
 
             return command.can_run(location, member)
-        except:
+        except Exception:
             # If the commands can_run method does not successfully return,
             # assume the command can not be run. This prevents bugs from
             # allowing access to commands that should not be allowed to be run.
