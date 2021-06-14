@@ -30,104 +30,105 @@ class Mute_Command(Bot_Command):
     Examples: `{bot_prefix}mute @user 2h` `{bot_prefix}mute nickname 2h` `{bot_prefix}mute @user`
     """
 
+    #ensures log file exists and self.muted contains its contents
+    def __init__(self):
+        #if the log file does not exist, create it
+        if not self.mute_log.exists():
+            self.mute_log.parent.mkdir(parents=True, exist_ok=True)
+            self.muted = {}
+            self.save()
+        with self.mute_log.open("r") as file:
+            self.muted = json.load(file)
+
+
+
+
+
     def can_run(self, location, member):
         # only admins are able to use this command
         return member is not None and member.guild_permissions.administrator
 
 
-    async def run(self, msg: discord.Message, args: str):
-        # TODO: Remove this check
-        if msg.author.guild_permissions.administrator:
-            #checks that user entered arguments for the command
-            if args:
-                #gets current server
-                guild = msg.author.guild
-                #gets current channel
-                channel = msg.channel
 
-                if not self.mute_log.exists():
-                    self.muted = {}
-                    self.save()
 
-                with self.mute_log.open("r") as file:
-                    try:
-                        self.muted = json.load(file)
-                    except Exception as e:
-                        self.muted = {}
-                        print(e)
 
-                #creates 'mute' role if it doesn't already exist in this server
-                if discord.utils.get(guild.roles, name="mute") is None:
-                    #disables messaging, reaction and voice channel permissions
-                    perms = discord.Permissions(send_messages=False, connect=False, speak=False, add_reactions=False)
-                    await guild.create_role(name="mute", hoist=True, permissions=perms, color=0x36393f)
-                mute = discord.utils.get(guild.roles, name="mute")
+    async def run(self, msg: discord.Message, args: str): 
+        #checks that user entered arguments for the command
+        if args:
+            #gets current server
+            guild = msg.author.guild
+            #gets current channel
+            channel = msg.channel
 
-                #split the mute duration from the member
-                parsed_args = self.split_args(args)
+            #creates 'mute' role if it doesn't already exist in this server
+            if discord.utils.get(guild.roles, name="mute") is None:
+                #disables messaging, reaction and voice channel permissions
+                perms = discord.Permissions(send_messages=False, connect=False, speak=False, add_reactions=False)
+                await guild.create_role(name="mute", hoist=True, permissions=perms, color=0x36393f)
+            self.role = discord.utils.get(guild.roles, name="mute")
 
-                #convert the mute duration into a datetime object
-                unmute_at = self.date_conversion(parsed_args[1:])
+            #split the mute duration from the member
+            parsed_args = self.split_args(args)
 
-                #for server mutes
-                if parsed_args[0].lower() == "all":
-                    try:
-                        for mem in guild.members:
-                            #doesn't assign role to server admins
-                            if mem.guild_permissions.administrator:
-                                continue
-                            #if member is not already muted, mute them
-                            if mute not in mem.roles:
-                                await self.log_mute(mem, mute, unmute_at)
-                    except Exception as e:
-                        print(e)
-                        print("Could not mute everyone")
-                        await channel.send("Could not mute everyone")
-                        return
-                    print(f"Muted @everyone")
-                    await channel.send(f"Muted all members for {self.date_string(parsed_args[1:])}")
+            #convert the mute duration into a datetime object
+            unmute_at = self.date_conversion(parsed_args[1:])
 
-                    #sleep until the time to unmute everyone
-                    await discord.utils.sleep_until(unmute_at)
+            #for server mutes
+            if parsed_args[0].lower() == "all":
+                try:
                     for mem in guild.members:
-                        #check if the member is muted and due to be unmuted
-                        if mute in mem.roles and self.compare_time(mem):
-                            #calls the unmute command from unmute.py
-                            await unmute.run(msg, str(member))
-                else:
-                    #get the member to be muted
-                    member = await get_member(channel, m=parsed_args[0], responder=msg.author)
+                        #doesn't assign role to server admins
+                        if mem.guild_permissions.administrator:
+                            continue
+                        #if member is not already muted, mute them
+                        if self.role not in mem.roles:
+                            await self.mute(mem, unmute_at)
+                except Exception as e:
+                    print(e)
+                    print("Could not mute everyone")
+                    await channel.send("Could not mute everyone")
+                    return
+                print(f"Muted @everyone for {self.date_string(parsed_args[1:])}")
+                await channel.send(f"Muted all members for {self.date_string(parsed_args[1:])}")
 
-                    #if member does not exist in this server
-                    if member is None:
-                        print(f"User @{parsed_args[0]} could not be found")
-                        await channel.send(
-                            format_max_utf16_len_string(
-                                "User **\@{}** could not be found",
-                                parsed_args[0]
-                            )
-                        )
-                    else:
-                        await self.log_mute(member, mute, str(unmute_at))
-                        print(f"Muted @{member}")
-                        await channel.send(f"Muted **{member}** for {self.date_string(parsed_args[1:])}")
-
-                        #waits for the specified time and then removes the role from user
-                        await discord.utils.sleep_until(unmute_at)
-                        #check if member is muted and is due to be unmuted
-                        if mute in member.roles and self.compare_time(member):
-                            #calls unmute command from unmute.py
-                            await unmute.run(msg, str(member))
-
-            #if user didnt enter any arguments
+                #sleep until the time to unmute everyone
+                await discord.utils.sleep_until(unmute_at)
+                for mem in guild.members:
+                    #check if the member is muted and due to be unmuted
+                    if self.role in mem.roles and self.compare_time(mem):
+                        #calls the unmute command from unmute.py
+                        await unmute.unmute(mem, channel)
+                await channel.send("Unmuted all members")
             else:
-                print("A user (and optional duration) must be provided")
-                await msg.channel.send("A user (and optional duration) must be provided.")
+                #get the member to be muted
+                member = await get_member(channel, m=parsed_args[0], responder=msg.author)
 
-        #unauthorized user tried to use this command
+                if await self.mute(member, unmute_at):
+                    print(f"Muted @{member}")
+                    await channel.send(f"Muted **{member}** for {self.date_string(parsed_args[1:])}")
+
+                    #waits for the specified time and then removes the role from user
+                    await discord.utils.sleep_until(unmute_at)
+                    #check if member is muted and is due to be unmuted
+                    if self.compare_time(member):
+                        #calls unmute command from unmute.py
+                        await unmute.unmute(member, channel)
+                        print(f"{member} was unmuted.")
+                        await channel.send(f"{member} was unmuted.")
+                #if member does not exist in this server
+                else:
+                    print(f"User @{parsed_args[0]} could not be found")
+                    await channel.send(
+                        format_max_utf16_len_string(
+                            "User **{}** could not be found",
+                            parsed_args[0]
+                        )
+                    )
+
+        #if user didnt enter any arguments
         else:
-            print("{msg.author} tried to use the mute command.")
-            await msg.channel.send("You do not have permission to use this command.")
+            print("A user (and optional duration) must be provided")
+            await msg.channel.send("A user (and optional duration) must be provided.")
 
 
 
@@ -153,7 +154,7 @@ class Mute_Command(Bot_Command):
             else:
                 parsed_args.append(int(units_dict[group]))
 
-        #if all time units are zeroed out, no time was specified and the default time is used
+        #if all time units are zeroed out, time wasn't specified or formatted incorrectly and the default time is used
         if 0 in parsed_args[1:] and len(set(parsed_args[1:])) == 1:
             parsed_args = self.split_args(f"{parsed_args[0]} {self.default_time}")
         return parsed_args
@@ -170,32 +171,56 @@ class Mute_Command(Bot_Command):
 
 
 
+    #formats the list of time units into a string
     def date_string(self, time: list) -> str:
         out = ""
         if time[0]:
-            out += f"{time[0]} weeks "
+            out += f"{time[0]} week(s) "
         if time[1]:
-            out += f"{time[1]} days "
+            out += f"{time[1]} day(s) "
         if time[2]:
-            out += f"{time[2]} hours "
+            out += f"{time[2]} hour(s) "
         if time[3]:
-            out += f"{time[3]} minutes"
+            out += f"{time[3]} minute(s)"
         return out
 
 
 
 
 
-    #writes to the log file: server id, member being muted, when to unmute
-    async def log_mute(self, member: discord.Member, role: discord.Role, unmute_at: str):
-        #assign the member the mute role
-        await member.add_roles(role)
-        #writes to the file when the member should be unmuted
-        if str(member.guild.id) not in self.muted:
-            self.muted[str(member.guild.id)] = {str(member.id): str(unmute_at)}
+    #mutes the passed member given a string representation of a string
+    async def mute(self, member: discord.Member, unmute_at: str) -> bool:
+        if member is not None:
+            #assign the member the mute role
+            await member.add_roles(self.role)
+            #writes to the file when the member should be unmuted
+            if str(member.guild.id) not in self.muted:
+                self.muted[str(member.guild.id)] = {str(member.id): unmute_at}
+            else:
+                self.muted[str(member.guild.id)][str(member.id)] = unmute_at
+            self.save()
+            return True
         else:
-            self.muted[str(member.guild.id)][str(member.id)] = str(unmute_at)
-        self.save()
+            return False
+
+
+
+
+
+    #mutes the passed member given a datetime object
+    async def mute(self, member: discord.Member, unmute_at: datetime.datetime) -> bool:
+        if member is not None:
+            #assign member the mute role
+            await member.add_roles(self.role)
+            #writes to the file when the member should be unmuted
+            if str(member.guild.id) not in self.muted:
+                self.muted[str(member.guild.id)] = {str(member.id): str(unmute_at)}
+            else:
+                self.muted[str(member.guild.id)][str(member.id)] = str(unmute_at)
+            self.save()
+            return True
+        else:
+            return False
 
 
 

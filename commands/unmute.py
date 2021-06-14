@@ -24,81 +24,80 @@ class Unmute_Command(Bot_Command):
         return member is not None and member.guild_permissions.administrator
 
     async def run(self, msg: discord.Message, args: str):
-        # TODO: Remove this check
-        if msg.author.guild_permissions.administrator:
-            #checks that user entered arguments for the command
-            if args:
-                #trims whitespace off of args
-                parsed_args = args.strip()
-                #current server
-                guild = msg.author.guild
+        #checks that user entered arguments for the command
+        if args:
+            #current server
+            guild = msg.author.guild
 
-                mute = discord.utils.get(guild.roles, name="mute")
+            #for server unmutes
+            if args.lower() == "all":
+                try:
+                    for mem in guild.members:
+                        #remove the mute role from the member and remove them from the log file
+                        await self.unmute(mem, msg.channel)
+                    print("Unmuted all members")
+                    await msg.channel.send("Unmuted all members")
+                except Exception as e:
+                    print(e)
+                    print("There was an error unmuting all members")
+                    await msg.channel.send("Could not unmute all members")
+                return
 
-                #for server unmutes
-                if parsed_args.lower() == "all":
-                    try:
-                        for m in guild.members:
-                            #remove the mute role from the member and remove them from the log file
-                            await m.remove_roles(mute)
-                            with self.mute_log.open("w") as file:
-                                log = json.load(file)
-                                log[str(guild.id)].pop(str(m.id))
-                                json.dump(log, file, indent=4)
-                        print("Unmuted all members")
-                        await msg.channel.send("Unmuted all members")
-                    except Exception as e:
-                        print(e)
-                        print("There was an error unmuting all members")
-                        await msg.channel.send("Could not unmute all members")
-                    return
+            #get the member to be unmuted
+            member = await get_member(msg.channel, args, responder=msg.author)
 
-                #get the member to be unmuted
-                member = await get_member(msg.channel, parsed_args, responder=msg.author)
-
-                #if member could not be found
-                if member is None:
-                    print(f"User @{parsed_args} could not be found")
-                    await msg.channel.send(
-                        format_max_utf16_len_string(
-                            "User **@\{}** could not be found",
-                            parsed_args
-                        )
+            #if member is muted
+            if await self.unmute(member, msg.channel):
+                print(f"User @{member} was unmuted")
+                await msg.channel.send(
+                    format_max_utf16_len_string(
+                        "User **{}** was unmuted",
+                        member.mention
                     )
-                    return
+                )
 
-                #if member is muted
-                if mute in member.roles:
-                    #remove role from member and remove member from log file
-                    await member.remove_roles(mute)
-                    with self.mute_log.open("w") as file:
-                        log = json.load(file)
-                        log[str(guild.id)].pop(str(member.id))
-                        json.dump(log, file, indent=4)
-
-                    print(f"User @{member} was unmuted")
-                    await msg.channel.send(
-                        format_max_utf16_len_string(
-                            "User {} was unmuted",
-                            member.mention
-                        )
-                    )
-                else:
-                    print(f"User @{member} is not muted")
-                    await msg.channel.send(
-                        format_max_utf16_len_string(
-                            "User **@\{}** is not muted",
-                            member
-                        )
-                    )
-            #if user didnt enter any arguments
-            else:
-                print("Please specify a user.")
-                await msg.channel.send("Please specify a user.")
-        #unauthorized user tried to use this command
+        #if user didnt enter any arguments
         else:
-            print("You do not have permission to use this command.")
-            await msg.channel.send("You do not have permission to use this command.")
+            print("Please specify a user.")
+            await msg.channel.send("Please specify a user.")
+
+
+
+
+
+    #unmutes the passed member and removes them from the log file
+    async def unmute(self, member: discord.Member, channel: discord.channel.TextChannel) -> bool:
+        #verify member exists
+        if member is None:
+            print(f"User could not be found")
+            await channel.send(
+                format_max_utf16_len_string("**User could not be found**")
+            )
+            return False
+
+        #get the mute role from this guild
+        mute = discord.utils.get(member.guild.roles, name="mute")
+
+        #if user isn't muted
+        if mute not in member.roles:
+            print(f"User @{member} is not muted")
+            await channel.send(
+                format_max_utf16_len_string(
+                    "User **{}** is not muted",
+                    member
+                )
+            )
+            return False
+
+        #unmute the member
+        await member.remove_roles(mute)
+        with self.mute_log.open("r") as file:
+            log = json.load(file)
+        with self.mute_log.open("w") as file:
+            log[str(member.guild.id)].pop(str(member.id))
+            json.dump(log, file, indent=4)
+        return True
+
 
 unmute = Unmute_Command()
 bot_commands.add_command(unmute)
