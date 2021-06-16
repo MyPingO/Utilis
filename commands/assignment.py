@@ -2,6 +2,8 @@ import json
 import re
 import discord
 from cmd import Bot_Command, bot_commands
+
+from discord import guild
 from commands.help import help_cmd
 from random import choice
 from pathlib import Path
@@ -70,12 +72,13 @@ class Assignment_Command(Bot_Command):
     $[class-number] pending [assignment_number]
     $[class_number] removeurl [assignment_number] [title_of_link]"""
 
-    def __init__(self, add_class, class_name, class_info):
-        self.name = class_name  # example ($211 or $212)
+    def __init__(self, add_class, class_name, class_info, guild_id): #TODO: SEE IF NEEDED
+        self.name = class_name  # example (211 or 212)
         # JSON part of the file that accesses the class_name
-        self.class_info = class_info
+        self.class_info = class_info # all the info of the class
         self.add_class = add_class
-        #print(self.class_info)  # example of class_info
+        self.guild_id = guild_id #the guild_id of the specific discord server
+        #print(self.class_info) <---- example of class_info
 
     def get_help(self, member: Optional[discord.Member], args: Optional[str]):
         if member is None or not member.guild_permissions.administrator:
@@ -146,14 +149,14 @@ class Assignment_Command(Bot_Command):
                     self.class_info["assignments"][assignment_num]["requested_urls"][i]
                 )
                 self.class_info["assignments"][assignment_num]["requested_urls"].pop(i)
-            self.add_class.save_assignments()
+            self.add_class.save_assignments(self.guild_id)
             await msg.channel.send("Successfully added links to Relevant Links!")
             return
         # if user wants to deny, remove from the pending list
         if approve_or_deny.casefold() == "deny":
             for i in link_choice:
                 self.class_info["assignments"][assignment_num]["requested_urls"].pop(i)
-            self.add_class.save_assignments()
+            self.add_class.save_assignments(self.guild_id)
             await msg.channel.send("Successfully removed links from the queue!")
             return
 
@@ -279,14 +282,14 @@ class Assignment_Command(Bot_Command):
                 await msg.channel.send(
                     "Since you are an admin, this got added to Relevant Links right away!"
                 )
-                self.add_class.save_assignments()
+                self.add_class.save_assignments(self.guild_id)
                 return
             # adds to queue
             self.class_info["assignments"][assignment_num]["requested_urls"].append(
                 new_added_url
             )
             # saves JSON file so queue doesnt get erased if bot crashes
-            self.add_class.save_assignments()
+            self.add_class.save_assignments(self.guild_id)
             await msg.channel.send(
                 "Your request to add this link will be reviewed by an admin."
             )
@@ -336,50 +339,48 @@ class Assignment_Command(Bot_Command):
         elif args.casefold().startswith("removeurl "):
             # to remove a link from the relevant links list
             # must have admin permissions
-            if msg.author.guild_permissions.administrator:
-                temp_split_args = args.split(" ")
-                split_args = []
-                for arg in temp_split_args:
-                    if arg != "":
-                        split_args.append(arg)
+            if not msg.author.guild_permissions.administrator:
+                await msg.channel.send(
+                    "Error: You cannot use this command since you are not admin!"
+                )
+                return
+            temp_split_args = args.split(" ")
+            split_args = []
+            for arg in temp_split_args:
+                if arg != "":
+                    split_args.append(arg)
 
-                """split_args[0] = remove
-                split_args[1] = assignment#
-                split_args[2] = title """
+            """split_args[0] = remove
+            split_args[1] = assignment#
+            split_args[2] = title """
 
-                assignment_num = split_args[1]
-                if assignment_num not in self.class_info["assignments"]:
+            assignment_num = split_args[1]
+            if assignment_num not in self.class_info["assignments"]:
+                await msg.channel.send(
+                    f"Error: The assignment you are trying to view does not exist, please check the assignment you want to view actually exists using **${self.name} assignments**"
+                )
+                return
+            # combine title if there are spaces
+            title = " ".join(split_args[2:])
+            # loops through list
+            for i in self.class_info["assignments"][assignment_num][
+                "relevant_links"
+            ]:
+                # if it finds a matching title
+                if title == i["title"]:
+                    # remove it form the list
+                    self.class_info["assignments"][assignment_num]["relevant_links"].remove(i)
+                    # confirm that a match was found and was deleted
                     await msg.channel.send(
-                        f"Error: The assignment you are trying to view does not exist, please check the assignment you want to view actually exists using **${self.name} assignments**"
+                        f"Removed **{i['title']}** from Relevant Links"
                     )
+                    # save JSON File
+                    self.add_class.save_assignments(self.guild_id)
                     return
-                # combine title if there are spaces
-                title = " ".join(split_args[2:])
-                # loops through list
-                for i in self.class_info["assignments"][assignment_num][
-                    "relevant_links"
-                ]:
-                    # if it finds a matching title
-                    if title == i["title"]:
-                        # remove it form the list
-                        self.class_info["assignments"][assignment_num]["relevant_links"].remove(i)
-                        # confirm that a match was found and was deleted
-                        await msg.channel.send(
-                            f"Removed **{i['title']}** from Relevant Links"
-                        )
-                        # save JSON File
-                        self.add_class.save_assignments()
-                        return
-                await msg.channel.send(
-                    f"Error: **{title}** not found in Relevant Links. This feature is case sensitive. Make sure you typed the title exactly as it is"
-                )
-                return
-            # if a non-admin tries to run the command
-            else:
-                await msg.channel.send(
-                    "Error: You need administrator permissions to use this command!"
-                )
-                return
+            await msg.channel.send(
+                f"Error: **{title}** not found in Relevant Links. This feature is case sensitive. Make sure you typed the title exactly as it is"
+            )
+            return
 
         # gives the solution to an assignment (solutions should be added after their due date)
         # $211 solution 1
@@ -391,6 +392,9 @@ class Assignment_Command(Bot_Command):
                 await msg.channel.send(
                     "Error: You did not enter a valid assignment number for the solution you want"
                 )
+                return
+            if not (self.add_class.solutions_path / self.name).exists():
+                await msg.channel.send("Error: There are no assignment solutions for this class yet!")
                 return
             # check if the assignment solution exists in $class_name folder using "pathway/self.name" (self.name = $211 or $212 command)
             for i in (self.add_class.solutions_path / self.name).iterdir():
@@ -405,10 +409,10 @@ class Assignment_Command(Bot_Command):
                                 f"Assignment {i.name.split('.')[0]} Solution",
                             )
                         )
-                        return
+
             # if the solution requested is not found in folder
             await msg.channel.send(
-                "The solution to the assignment you are looking for either does not exist or hasn't been added yet. If this is the case, ping a mod!"
+                "Error: The solution to the assignment you are looking for either does not exist or hasn't been added yet. If this is the case, ping a mod!"
             )
             return
 
@@ -475,7 +479,7 @@ class Assignment_Command(Bot_Command):
                     key_counter += 1
                 # save assignments to update the json file in real time
                 self.class_info["assignments"][assignment_num] = new_assignment
-                self.add_class.save_assignments()
+                self.add_class.save_assignments(self.guild_id)
                 await msg.channel.send(
                     f"Done! You can view the added assignment by typing **${self.name} {assignment_num}**. If you want to edit this assignment in case you made a mistake, type **${self.name} edit {assignment_num}**."
                 )
@@ -573,7 +577,7 @@ class Assignment_Command(Bot_Command):
                 # if they chose "Accept", save and apply changes made
                 if apply_choice == "Accept":
                     self.class_info["assignments"][assignment_num][edit_choice] = edit
-                    self.add_class.save_assignments()
+                    self.add_class.save_assignments(self.guild_id)
                     await msg.channel.send(
                         f"Edits have been accepted and applied! To view your changed, type **${self.name} {assignment_num}**."
                     )
@@ -601,7 +605,7 @@ class Assignment_Command(Bot_Command):
                         await msg.channel.send("No assignments were deleted.")
                     else:
                         del self.class_info["assignments"][assignment_num]
-                        self.add_class.save_assignments()
+                        self.add_class.save_assignments(self.guild_id)
                         await msg.channel.send(f"**{assignment_num}** was deleted from the list of classes. You will no longer be able to view or edit it!")
             return
         # Send a list of all existing/added assignments for the class (self.name) listed in self.class_info["assignments"]
@@ -649,52 +653,46 @@ class addClass(Bot_Command):
     def __init__(self):
         if not self.assignments_path.exists():
             self.assignments_dict = {}
-            self.save_assignments()
         else:
             with self.assignments_path.open() as file:
                 self.assignments_dict = json.load(file)
-            for class_name in self.assignments_dict:
-                self.add_Class(class_name, self.assignments_dict[class_name])
-                #print(self.assignments_dict)
+            for guild_id in self.assignments_dict.keys():
+                for class_name in self.assignments_dict[guild_id]:
+                    self.add_Class(class_name, self.assignments_dict[guild_id][class_name], guild_id)
 
-    def save_assignments(self):
+    def save_assignments(self, guild_id):
         self.assignments_path.parent.mkdir(parents=True, exist_ok=True)
-        self.assignments_dict = {}
-        print(self.assignments_dict)
         for i in self.commands:
-            self.assignments_dict[i.name] = i.class_info
+            if i.guild_id == guild_id:
+                self.assignments_dict[guild_id][i.name] = i.class_info
         with self.assignments_path.open("w") as file:
             json.dump(self.assignments_dict, file, indent=3)
 
 
-    def add_Class(self, class_name, class_info):
+    def add_Class(self, class_name, class_info, guild_id):
         # add command to commands list and add it as a global command
-        new_assignment = Assignment_Command(self, class_name, class_info)
+        new_assignment = Assignment_Command(self, class_name, class_info, guild_id)
         # assignments[class_name] = class_info ^ at the start
         self.commands.append(new_assignment)
-        bot_commands.add_command(new_assignment)
+        bot_commands.add_command(new_assignment, guild_id)
 
-    def create_class(self, class_name, professor, website):
+    def create_class(self, class_name, professor, website, guild_id):
         class_info = {
             "assignments": {},
             "professor": professor,
             "website": website
         }
-        self.add_Class(class_name, class_info)
-        self.save_assignments()
+        self.add_Class(class_name, class_info, guild_id)
+        self.save_assignments(guild_id)
 
     def can_run(self, location, member):
         return member is not None and member.guild_permissions.administrator
 
     async def run(self, msg: discord.Message, args: str):
         if args.casefold().startswith("add "):
-            # guild_id = str(msg.guild.id)#
-            # if guild_id not in self.assignments_dict:#
-            #     print(self.assignments_dict)#
-            #     print("NOT IN HERE")#
-            #     self.assignments_dict[guild_id] = {}#
-            #     self.save_assignments()#
-            #     print(self.assignments_dict)#
+            guild_id = str(msg.guild.id)
+            if guild_id not in self.assignments_dict:
+                self.assignments_dict[guild_id] = {}
             split_args = args.split(" ", 1)
             """ split_args[0] = add
                 split_args[1:] = class_name(s) """
@@ -708,12 +706,12 @@ class addClass(Bot_Command):
                     return
             does_class_exist = False
             for class_name in self.commands:
-                if class_name.name in class_list:
+                if class_name.name in class_list and class_name.name in self.assignments_dict[guild_id]:
                     does_class_exist = True
                     await msg.channel.send(f"Error: The class command {class_name} has already been added to the bot. Type **${class_name}** to see how to use it.")
                     class_list.remove(class_name.name)
             if does_class_exist and len(class_list) != 0: 
-                await msg.channel.send("Do you still want to add the other classes that were not yet added to the bot?")
+                await msg.channel.send("Do you still want to add the other classes that were not yet added to the server?")
                 yes_or_no = ["Yes", "No"]
                 response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
                 if response == "No" or response == None:
@@ -728,17 +726,18 @@ class addClass(Bot_Command):
                 website = await link_check(await wait_for_reply(msg.author, msg.channel), msg)
                 if website == "stop" or website == None:
                     return
-                self.create_class(class_name, professor, website)
+                self.create_class(class_name, professor, website, guild_id)
                 await msg.channel.send(f"You have successfully added the **{class_name}** class!\nTo add assignments to this class, type **${class_name} add [assignment_number]** or do **$help {class_name}** to see an example of how to add an assignment.")
             return
         elif args.casefold() == "list":
+            guild_id = str(msg.guild.id)
             # for loop lambda function that sorts assignments_dict in order (this is done incase assignments weren't added in order)
             # ex: added in order: 1, 2, 3, 5, 4, 9, 8, 7 ------> displays in order: 1, 2, 3, 4, 5, 6, 7, 8, 9
             # only works numerically, not with any other characters (i.e: A, a, $, -, +) | Note* converts number char into type int
             class_list = ""
-            for class_num in sorted(self.assignments_dict.keys(), key=lambda num: int(num)):
+            for class_num in sorted(self.assignments_dict[guild_id], key=lambda num: int(num)):
                 # adds sorted numbers to a list
-                class_list += f"**{class_num}** - [{self.assignments_dict[class_num]['professor']}]({self.assignments_dict[class_num]['website']})\n\n"
+                class_list += f"**{class_num}** - [{self.assignments_dict[guild_id][class_num]['professor']}]({self.assignments_dict[guild_id][class_num]['website']})\n\n"
             # if there are no assignments for that class (i.e nothing in class_list), send a message
             if len(class_list) == 0:
                 await msg.channel.send(
@@ -773,7 +772,7 @@ class addClass(Bot_Command):
                         for index, i in enumerate(self.commands):
                             if i.name == class_num:
                                 del self.commands[index]
-                                self.save_assignments()
+                                self.save_assignments(self.guild_id)
                                 break
                         await msg.channel.send(f"**{class_num}** was deleted from the list of classes. You will no longer be able to view or edit it!")
             return
