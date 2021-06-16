@@ -649,7 +649,7 @@ class addClass(Bot_Command):
     # set variable to path of folders to call them later easier
     solutions_path = Path("data/assignments/solutions")
     assignments_path = Path("data/assignments/assignments.json") # TODO: change back the file
-    commands = []  # class_name (211, 212)
+    commands = []  # classes (211, 212)
     def __init__(self):
         if not self.assignments_path.exists():
             self.assignments_dict = {}
@@ -663,6 +663,7 @@ class addClass(Bot_Command):
     def save_assignments(self, guild_id):
         self.assignments_path.parent.mkdir(parents=True, exist_ok=True)
         for i in self.commands:
+            print(i.name)
             if i.guild_id == guild_id:
                 self.assignments_dict[guild_id][i.name] = i.class_info
         with self.assignments_path.open("w") as file:
@@ -708,7 +709,7 @@ class addClass(Bot_Command):
             for class_name in self.commands:
                 if class_name.name in class_list and class_name.name in self.assignments_dict[guild_id]:
                     does_class_exist = True
-                    await msg.channel.send(f"Error: The class command {class_name} has already been added to the bot. Type **${class_name}** to see how to use it.")
+                    await msg.channel.send(f"Error: The class command **{class_name}** has already been added to the bot. Type **${class_name}** to see how to use it.")
                     class_list.remove(class_name.name)
             if does_class_exist and len(class_list) != 0: 
                 await msg.channel.send("Do you still want to add the other classes that were not yet added to the server?")
@@ -753,14 +754,13 @@ class addClass(Bot_Command):
             )
             await msg.channel.send(embed=classes_embed)
         elif args.casefold().startswith("delete "):
+            guild_id = str(msg.guild.id)
             split_args = args.split(" ", 1)
             """ split_args[0] = delete
                 split_args[1] = classes to delete """
             class_list = re.split(r"[,，\s]\s*", split_args[1])
-            with self.assignments_path.open() as file:
-                classes = json.load(file)
             for class_num in class_list:
-                if class_num not in classes.keys():
+                if class_num not in self.assignments_dict[guild_id]:
                     await msg.channel.send(f"**{class_num}** has not been added to the list of classes.")
                 else:
                     await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE THE CLASS__**   **{class_num}**   **__THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
@@ -771,8 +771,10 @@ class addClass(Bot_Command):
                     else:
                         for index, i in enumerate(self.commands):
                             if i.name == class_num:
+                                del self.assignments_dict[guild_id][i.name]
                                 del self.commands[index]
-                                self.save_assignments(self.guild_id)
+                                bot_commands.remove_command(i, guild_id)
+                                self.save_assignments(guild_id)
                                 break
                         await msg.channel.send(f"**{class_num}** was deleted from the list of classes. You will no longer be able to view or edit it!")
             return
