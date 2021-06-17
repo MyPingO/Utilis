@@ -16,7 +16,7 @@ class Random_Command(Bot_Command):
     `Upper bound`
     """
 
-    args_matcher = re.compile(r"^(\d)+\s+(\d)+$")
+    args_matcher = re.compile(r"^(\d+)\s+(\d+)$")
 
     async def run(self, msg: discord.Message, args: str):
         m = self.args_matcher.fullmatch(args)
