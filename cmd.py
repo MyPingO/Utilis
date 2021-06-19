@@ -226,6 +226,7 @@ class Bot_Commands:
         """Removes a `command` from a `guild`, or tries to remove `command`
         globally if `guild` is `None`.
         """
+        cmd: Optional[Bot_Command]
         if isinstance(command, Bot_Command):
             cmd = command
         else:
@@ -291,7 +292,7 @@ class Bot_Commands:
             else:
                 return []
 
-    def get_all_commands(self) -> list[Bot_Command]:
+    def get_all_commands(self) -> set[Bot_Command]:
         """Returns all bot commands registered in all guilds."""
 
         return {
@@ -373,12 +374,15 @@ class Bot_Commands:
         returns `False` if an exception was thrown.
         """
         try:
+            cmd: Optional[Bot_Command]
             if not isinstance(command, Bot_Command):
-                command = self.get_command(command, self._location_to_guild(location))
-            if command is None:
+                cmd = self.get_command(command, self._get_guild(location))
+            else:
+                cmd = command
+            if cmd is None:
                 return False
 
-            return command.can_run(location, member)
+            return cmd.can_run(location, member)
         except Exception:
             # If the commands can_run method does not successfully return,
             # assume the command can not be run. This prevents bugs from
