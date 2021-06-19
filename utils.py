@@ -3,8 +3,10 @@ from core import client
 import discord
 import asyncio
 import math
-from re import compile as re_compile
-from typing import Callable, Iterable, Optional
+import re
+from typing import Callable, Iterable, Optional, Sequence, TypeVar
+
+T = TypeVar("T")
 
 
 def utf16_len(s: str) -> int:
@@ -175,26 +177,26 @@ def format_max_utf16_len_string(
     # Convert args to a list of strings
     if max_arg_len is not None:
         # Limit the UTF16 length of each arg to max_arg_len if it was given.
-        args = [
+        arg_list = [
             max_utf16_len_string(str(arg), max_arg_len, add_ellipsis) for arg in args
         ]
     elif max_total_len is not None:
         # Limit the UTF16 length of each arg to max_total_len if it was given,
         # because each arg can be at most that long.
-        args = [
+        arg_list = [
             max_utf16_len_string(str(arg), max_total_len, add_ellipsis) for arg in args
         ]
     else:
-        args = [str(arg) for arg in args]
+        arg_list = [str(arg) for arg in args]
 
     # If a max UTF16 length was given for the string, shorten args to fit it.
     if max_total_len is not None:
         # Get a list of the UTF16 length of every arg
-        args_lens = [utf16_len(arg) for arg in args]
+        arg_lens = [utf16_len(arg) for arg in arg_list]
 
         # Get the total UTF16 lengths of the fstring and args.
         total_fstring_len = sum(utf16_len(s) for s in split_fstring)
-        total_args_len = sum(args_lens)
+        total_args_len = sum(arg_lens)
 
         # The maximum total length of all args in order to keep the return
         # string's UTF16 length within max_total_len.
@@ -208,7 +210,7 @@ def format_max_utf16_len_string(
         # length for all args.
         while total_args_len > total_args_maxlen:
             # Get the longest and second longest arg lengths.
-            sorted_unique_lens = sorted(set(args_lens))
+            sorted_unique_lens = sorted(set(arg_lens))
             maxlen = sorted_unique_lens[-1]
             if len(sorted_unique_lens) > 1:
                 second_maxlen = sorted_unique_lens[-2]
@@ -217,7 +219,7 @@ def format_max_utf16_len_string(
 
             # Get the indecies of args to shorten. The list is reversed so
             # that the last args get shortened the most.
-            max_len_indecies = [i for i, v in enumerate(args_lens) if v == maxlen]
+            max_len_indecies = [i for i, v in enumerate(arg_lens) if v == maxlen]
             max_len_indecies.reverse()
 
             # How much space can be saved by shortening the longest strings.
@@ -247,22 +249,23 @@ def format_max_utf16_len_string(
                     second_maxlen,
                 )
                 # Shorten the arg
-                args[index] = max_utf16_len_string(
-                    args[index], shorten_to, add_ellipsis
+                arg_list[index] = max_utf16_len_string(
+                    arg_list[index], shorten_to, add_ellipsis
                 )
                 # Update the arg's UTF16 length in the list of arg UTF16 lengths
-                args_lens[index] = utf16_len(args[index])
+                arg_lens[index] = utf16_len(arg_list[index])
                 # Decrease how much the rest of the longest args need to be
                 # shortened by in order to reach the target total length.
-                delta = maxlen - args_lens[index]
+                delta = maxlen - arg_lens[index]
                 total_delta -= delta
 
             # Update the total arg lengths.
-            total_args_len = sum(args_lens)
+            total_args_len = sum(arg_lens)
 
     # Insert args into the fstring and return
     ret = "".join(
-        fstring_part + arg_part for fstring_part, arg_part in zip(split_fstring, args)
+        fstring_part + arg_part
+        for fstring_part, arg_part in zip(split_fstring, arg_list)
     )
     return ret + split_fstring[-1]
 
@@ -301,8 +304,8 @@ async def roles(msg: discord.Message):
                 print(f"{msg.author} doesn't have the role {role[1:]}")
 
 
-_re_user_ping = re_compile(r"<@!?(\d{18})>")
-_re_user_discriminator = re_compile(r"(.+)#(\d{4})")
+_re_user_ping = re.compile(r"<@!?(\d{18})>")
+_re_user_discriminator = re.compile(r"(.+)#(\d{4})")
 
 
 async def get_member(
@@ -418,7 +421,7 @@ async def get_member(
         )
 
 
-_re_channel_mention = re_compile(r"<#(\d{18})>")
+_re_channel_mention = re.compile(r"<#(\d{18})>")
 
 
 async def get_channel(
@@ -529,7 +532,7 @@ async def get_channel(
         )
 
 
-_re_role_mention = re_compile(r"<@&(\d{18})>")
+_re_role_mention = re.compile(r"<@&(\d{18})>")
 
 
 async def get_role(
@@ -591,9 +594,9 @@ async def get_role(
     # Try to find roles with the name `r` (case insensitive)
     role_lower = r.casefold()
     roles = []
-    for r in channel.guild.roles:
-        if r.name.casefold() == role_lower:
-            roles.append(r)
+    for role in channel.guild.roles:
+        if role.name.casefold() == role_lower:
+            roles.append(role)
 
     if len(roles) == 0:  # If no roles were found, return `None`
         return None
@@ -631,8 +634,8 @@ async def get_role(
 
 async def user_select_from_list(
     channel: discord.TextChannel,
-    options: Iterable,
-    option_text_generator: Callable[[], str],
+    options: Sequence[T],
+    option_text_generator: Callable[[T], str],
     responder: discord.Member = None,
     title: str = None,
     timeout: int = 60,
@@ -650,10 +653,10 @@ async def user_select_from_list(
     channel: `discord.TextChannel`
     The channel where the `options` will be sent to be chosen from.
 
-    options: `list`
-    The list of options that will be chosen from.
+    options: `Sequence[T]`
+    The options that will be chosen from.
 
-    option_text_generator: `Callable[[], str]`
+    option_text_generator: `Callable[[T], str]`
     A function to convert an option from `options` to a string representation
     that can be sent in a message to `channel` to be chosen from by a user.
 
@@ -763,7 +766,7 @@ async def wait_for_reply(
         # We want just the content
 
 
-_re_arg_splitter = re_compile(
+_re_arg_splitter = re.compile(
     #       Match text in quotes as a single group
     #       V                          Match any number of double backslashes so that \" is a valid quote escape but \\" isn't.
     #       V                          V          Match \" within quotes
@@ -776,7 +779,7 @@ _re_arg_splitter = re_compile(
     #       V                          V          V        V          V               V           V
     r'\s*(?:(?:\"(?P<quoted_text>(?:(?:(?:\\\\)*)|(?:\\\")|(?:[^"]))*)\")|(?:(?P<text>[^\s,，]+)))(?P<tail>$|(?:\s*[,，]\s*)|(?:\s+))'
 )
-_re_remove_escaped_quote = re_compile(r'((?:[^\\]|^)(?:\\\\)*)\\"')
+_re_remove_escaped_quote = re.compile(r'((?:[^\\]|^)(?:\\\\)*)\\"')
 
 
 def split_args(args: str, treat_comma_as_space: bool = False) -> list[str]:
@@ -814,7 +817,7 @@ def split_args(args: str, treat_comma_as_space: bool = False) -> list[str]:
         matches.append(m)
         comma_separated = comma_separated or (
             not treat_comma_as_space
-            and m.group("tail")
+            and m.group("tail") != ""
             and not m.group("tail").isspace()  # Checks for comma
         )
 
@@ -828,7 +831,9 @@ def split_args(args: str, treat_comma_as_space: bool = False) -> list[str]:
         # If args are comma separated, group all matches in between commas
         # into a single string.
         ret = []
-        combine = []  # A list of matches that appear together before a comma
+
+        # A list of matches that appear together before a comma
+        combine: list[re.Match] = []
         for match in matches:
             if match.group("tail") and not match.group("tail").isspace():
                 # If match ends with a comma, combine it with previous matches
