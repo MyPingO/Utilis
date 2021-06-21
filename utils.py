@@ -895,3 +895,306 @@ def delete_empty_directories (directory, base_path):
     directory = directory.parent
     # run the recursive function with new directory
     delete_empty_directories(directory, base_path)
+
+class Multi_Page_Embed_Message:
+    page_turner: Optional[discord.Member]
+    page: Optional[int]
+    pages: list[discord.Embed]
+    msg: Optional[discord.Message]
+    footer_generator: Optional[Callable[[int, int, bool], str]]
+
+    _larrow = "⬅️"
+    _rarrow = "➡️"
+
+    def __init__(
+        self,
+        items: Iterable[T],
+        title: Optional[str],
+        description: Optional[str],
+        field_generator: Callable[[T], tuple[str, str, bool]],
+        *,
+        description_on_every_page: bool = True,
+        max_field_count: int = 25,
+        max_embed_len: int = 6000,
+        page_turner: Optional[discord.Member] = None,
+        footer_generator: Optional[
+            Callable[[int, int, bool], str]
+        ] = lambda pg, total_pgs, can_turn: f"Page {pg}/{total_pgs}."
+        + (" React with ⬅️ or ➡️ to turn the pages." if can_turn else ""),
+    ):
+        """Creates multiple pages of embeds that can be sent as a single
+        message and have their pages turned using reactions.
+
+        Parameters
+        -----------
+        items: Iterable[T]
+        The items to display in the embed. These will be converted into fields
+        to insert into embeds using `field_generator`.
+
+        title: Optional[str]
+        The title for every embed. This will be the same for every embed. If
+        `title` is `None` then the embeds will not be titled.
+
+        description: Optional[str]
+        The description for embeds. If `description_on_every_page` is `True`
+        then every embed will have `description` as its description. Otherwise,
+        only the first embed will have a description. If `description` is
+        `None`, then no embeds will have a description.
+
+        field_generator: Callable[[T], tuple[str, str, bool]]
+        A function that takes an item from `items` and returns a tuple that
+        contains the information used to create a field based on that item.
+        The first two elements in the tuple should be strings deciding the
+        field's name and value. The third element in the tuple should be a
+        boolean controlling whether or not the field should be inline.
+
+        description_on_every_page: bool
+        Controls whether or not embeds after the first one should be given the
+        description `description`, or whether the second embed onwards should
+        not have any descriptions. Doesn't do anything if `description` is
+        `None`.
+
+        max_field_count: int
+        The maximum number of fields an embed can have.
+
+        max_embed_len: int
+        The maximum UTF-16 length of every embed.
+
+        page_turner: Optional[discord.Member]
+        The member that can turn pages in the embed. If `page_turner` is
+        `None` then any member can turn pages.
+
+        footer_generator: Optional[Callable[[int, int, bool], str]]
+        A function that generates footers for every embed if there is more than
+        one embed. Its arguments are the current page, the total number of
+        pages, and whether or not the embed can still have its pages turned.
+        The function is called for every embed once when filling in the embeds
+        with `True` as its final argument, and once more when the embed can no
+        longer have its pages turned with `False` as its final argument. If
+        `footer_generator` is `None` or only one embed is generated, then
+        embeds will not be given footers.
+        """
+        self.page_turner = page_turner
+        self.page = None
+        self.msg = None
+        self._footer_generator = footer_generator
+        self._create_pages(
+            items,
+            title,
+            description,
+            field_generator,
+            description_on_every_page,
+            max_field_count,
+            max_embed_len,
+        )
+
+    async def send(
+        self,
+        channel: discord.TextChannel,
+        page_turn_timeout: int = 180,
+        blocking: bool = False,
+    ) -> None:
+        """Sends the multi page embed to `channel`.
+
+        Parameters
+        -----------
+        channel: discord.TextChannel
+        The channel to send the multi page embed to.
+
+        page_turn_timeout: int
+        How long in seconds until the multi page embed's pages can no longer
+        be turned. Turning a page resets the timer to `page_turn_timeout`
+        again.
+
+        blocking: bool
+        Whether or not the method should block execution until the multi page
+        embed's pages can no longer be turned.
+        """
+        if self.pages:
+            self.page = 0
+            self.msg = await channel.send(embed=self.pages[self.page])
+            if len(self.pages) > 1:
+                if blocking:
+                    await self._wait_for_page_turn(page_turn_timeout)
+                else:
+                    asyncio.ensure_future(self._wait_for_page_turn(page_turn_timeout))
+
+    def _create_pages(
+        self,
+        items: Iterable[T],
+        title: Optional[str],
+        description: Optional[str],
+        field_generator: Callable[[T], tuple[str, str, bool]],
+        description_on_every_page: bool,
+        max_field_count: int,
+        max_embed_len: int,
+    ):
+        # Tries to estimate the longest possible length for a footer to so
+        # that the code can try to keep the length of each embed within
+        # max_embed_len. This may not be an accurate estimate, and embeds
+        # becoming larger than max_embed_len when a footer is inserted is
+        # currently not handled.
+        sample_footer_len = (
+            max(
+                utf16_len(self._footer_generator(999, 999, True)),
+                utf16_len(self._footer_generator(999, 999, False)),
+            )
+            if self._footer_generator is not None
+            else 0
+        )
+
+        # Create the first embed
+        embed = discord.Embed()
+        if title is not None:
+            embed.title = title
+        if description is not None:
+            embed.description = description
+
+        self.pages = [embed]
+
+        # Fill in embeds
+        for item in items:
+            # Generate info for item's field
+            name, value, inline = field_generator(item)
+            if (
+                max_embed_len
+                <= (
+                    utf16_embed_len(embed)
+                    + utf16_len(name)
+                    + utf16_len(value)
+                    + sample_footer_len
+                )
+                or len(embed.fields) >= max_field_count
+            ):
+                # If the field can not fit in the embed, insert it into a new
+                # embed.
+                embed = discord.Embed()
+                if title is not None:
+                    embed.title = title
+                if description is not None and description_on_every_page:
+                    embed.description = description
+                self.pages.append(embed)
+
+            # Add item's field
+            embed.add_field(name=name, value=value, inline=False)
+
+        # Add page number footers to embeds if there are multiple embeds
+        if self._footer_generator is not None and len(self.pages) > 1:
+            for page_num, page in enumerate(self.pages):
+                page.set_footer(
+                    # The True here means that the embed's pages can still be
+                    # turned.
+                    text=self._footer_generator(page_num + 1, len(self.pages), True)
+                )
+
+    async def _update_msg(self):
+        """Re-fetches the sent message in order to get an updated list of its
+        reactions and to ensure that it still exists.
+        """
+        try:
+            self.msg = await self.msg.channel.fetch_message(self.msg.id)
+        except discord.HTTPException:
+            self.msg = None
+
+    async def _wait_for_page_turn(self, page_turn_timeout: int):
+        try:
+            # Keep turning pages until the function times out waiting for a
+            # page to be turned or an exception is thrown.
+            while self.msg:
+                can_turn_left = 0 < self.page
+                can_turn_right = self.page + 1 != len(self.pages)
+
+                # Update the message to get the updated reactions
+                await self._update_msg()
+
+                # Clear any reactions not from the bot that don't belong
+                for reaction in self.msg.reactions:
+                    if (
+                        (
+                            reaction.emoji != self._larrow
+                            and reaction.emoji != self._rarrow
+                        )
+                        or (reaction.emoji == self._larrow and not can_turn_left)
+                        or (reaction.emoji == self._rarrow and not can_turn_right)
+                    ):
+                        await reaction.clear()
+                    else:
+                        async for member in reaction.users():
+                            if member != client.user:
+                                await reaction.remove(member)
+
+                # Add arrow reactions
+                if can_turn_left:
+                    await self.msg.add_reaction(self._larrow)
+                if can_turn_right:
+                    await self.msg.add_reaction(self._rarrow)
+
+                # Wait for reactions until a valid one is found or the function
+                # times out waiting for one
+                while True:
+                    try:
+                        # The check function takes the reaction and author
+                        reaction, reactor = await client.wait_for(
+                            "reaction_add",
+                            # Ignores bot's reactions
+                            check=lambda r, a: a != client.user,
+                            timeout=page_turn_timeout,
+                        )
+                    except asyncio.TimeoutError:
+                        # After timing out waiting for a page to be turned,
+                        # remove reactions, update the message's footer and
+                        # return.
+                        await self._update_msg()
+                        if self.msg is not None:
+                            # Remove reactions
+                            for reaction in self.msg.reactions:
+                                await reaction.clear()
+                            if self._footer_generator is not None:
+                                # Update the embed's footer to remove the page
+                                # turning hint, The False here means that the
+                                # embed's pages can no longer be turned.
+                                new_footer = self._footer_generator(
+                                    self.page + 1, len(self.pages), False
+                                )
+                                if new_footer != self.msg.embeds[0].footer:
+                                    self.pages[self.page].set_footer(text=new_footer)
+                                    await self.msg.edit(embed=self.pages[self.page])
+                        return
+
+                    # Handle reaction
+                    if (
+                        reaction.emoji != self._larrow
+                        and reaction.emoji != self._rarrow
+                    ):
+                        # Delete reactions that aren't arrows
+                        await reaction.clear()
+                    elif self.page_turner is not None and reactor != self.page_turner:
+                        # Delete reactions from members who can't turn pages
+                        await reaction.remove(reactor)
+                    else:
+                        if reaction.emoji == self._larrow:
+                            if can_turn_left:
+                                # Turn page
+                                self.page -= 1
+                                await self.msg.edit(embed=self.pages[self.page])
+                                break  # Wait for another reaction
+                            else:
+                                reaction.clear()
+                        else:
+                            if can_turn_right:
+                                if not can_turn_left:
+                                    # Clear all reactions to ensure that when
+                                    # the left arrow gets re-added it will be
+                                    # added to the left of the right arrow.
+                                    await self._update_msg()
+                                    for reaction in self.msg.reactions:
+                                        await reaction.clear()
+                                # Turn page
+                                self.page += 1
+                                await self.msg.edit(embed=self.pages[self.page])
+                                break  # Wait for another reaction
+                            else:
+                                reaction.clear()
+
+        except discord.HTTPException:
+            return

@@ -2,7 +2,12 @@ import discord
 from typing import Union, Optional
 
 from cmd import Bot_Command, bot_commands
-from utils import utf16_len, utf16_embed_len, format_max_utf16_len_string
+from utils import (
+    utf16_len,
+    utf16_embed_len,
+    format_max_utf16_len_string,
+    Multi_Page_Embed_Message,
+)
 
 
 class Help_Command(Bot_Command):
@@ -29,35 +34,26 @@ class Help_Command(Bot_Command):
                 )
         else:
             # Otherwise, print a list of all commands with a short description
+            commands = sorted(
+                (
+                    cmd
+                    for cmd in bot_commands.get_commands_in(msg.guild)
+                    if bot_commands.can_run(cmd, msg.channel, msg.author)
+                ),
+                key=lambda c: c.name.casefold(),
+            )
+            title = "Commands"
+            description = "Run `help <command>` to get detailed information about a specific command."
 
-            help_embed = discord.Embed(
-                title="Commands",
-                description="Run `help <command>` to get detailed information about a specific command.",
+            help_embeds = Multi_Page_Embed_Message(
+                commands,
+                title,
+                description,
+                lambda c: (c.name, c.short_help, False),
+                page_turner=msg.author,
             )
 
-            # Get all of the commands in alphabetical order and add them to
-            # the embed.
-            for cmd in sorted(
-                bot_commands.get_commands_in(msg.guild), key=lambda c: c.name.casefold()
-            ):
-                # Make sure that the command can be run by the user
-                if bot_commands.can_run(cmd, msg.channel, msg.author):
-                    # If the command name and its help info can't fit in the
-                    # embed, send the embed and create a new one
-                    if (
-                        utf16_embed_len(help_embed)
-                        + utf16_len(cmd.name)
-                        + utf16_len(cmd.short_help)
-                        > 6000
-                    ):
-                        await msg.channel.send(embed=help_embed)
-                        help_embed = discord.Embed(title="Commands (cont.)")
-
-                    help_embed.add_field(
-                        name=cmd.name, value=cmd.short_help, inline=False
-                    )
-
-            await msg.channel.send(embed=help_embed)
+            await help_embeds.send(msg.channel)
 
     async def get_command_info(
         self,
