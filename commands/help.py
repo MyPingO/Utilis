@@ -50,7 +50,7 @@ class Help_Command(Bot_Command):
                 title,
                 description,
                 lambda c: (c.name, c.short_help, False),
-                page_turner=msg.author,
+                msg.author,
             )
 
             await help_embeds.send(msg.channel)
@@ -64,7 +64,7 @@ class Help_Command(Bot_Command):
     ):
         """Sends a help message to `channel` for a specified `command`.
 
-        Attributes
+        Parameters
         ------------
         command: Union[Bot_Command, str]
         A command or the name of a command to display help for. If an invalid
