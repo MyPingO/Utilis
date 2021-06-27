@@ -4,7 +4,7 @@ import discord
 import asyncio
 import math
 import re
-from typing import Callable, Iterable, Optional, Sequence, TypeVar
+from typing import Callable, Iterable, Union, Optional, Sequence, TypeVar
 
 T = TypeVar("T")
 
@@ -897,7 +897,7 @@ def delete_empty_directories (directory, base_path):
     delete_empty_directories(directory, base_path)
 
 class Multi_Page_Embed_Message:
-    """A class representing an embed with multiple pages that can be turned
+    """A class representing an embed with multiple pages that can be cycled
     using reactions.
 
     Attributes
@@ -913,119 +913,57 @@ class Multi_Page_Embed_Message:
     The message that the multi page embed was sent to. `None` if the message
     has not been sent yet. May also be `None` if the message has been deleted.
 
-    page_turner: Optional[discord.Member]
-    The member that can turn the pages of the embed. If `page_turner` is
-    `None` then any member can turn the pages.
+    page_turner: Optional[Union[discord.User, discord.Member]]
+    The user that can turn the pages of the embed. If `page_turner` is `None`
+    then any user can turn the pages.
     """
 
     page: Optional[int]
     pages: list[discord.Embed]
     msg: Optional[discord.Message]
-    page_turner: Optional[discord.Member]
-    _footer_generator: Optional[
-        Callable[[int, int, Optional[discord.Member], bool], str]
-    ]
+    page_turner: Optional[Union[discord.User, discord.Member]]
 
     _larrow = "⬅️"
     _rarrow = "➡️"
 
     def __init__(
         self,
-        items: Iterable[T],
-        title: Optional[str],
-        description: Optional[str],
-        field_generator: Callable[[T], tuple[str, str, bool]],
-        page_turner: Optional[discord.Member],
-        *,
-        description_on_every_page: bool = True,
-        max_field_count: int = 25,
-        max_embed_len: int = 6000,
-        footer_generator: Optional[
-            Callable[[int, int, Optional[discord.Member], bool], str]
-        ] = lambda pg, total_pgs, pg_turner, can_turn: (
-            f" Requested by {pg_turner.name}#{pg_turner.discriminator}"
-            if pg_turner is not None
-            else ""
-        )
-        + (" | " if pg_turner is not None and total_pgs > 1 else "")
-        + (
-            f"Page {pg}/{total_pgs}.{' React with ⬅️ or ➡️ to turn the pages.' if can_turn else ''}"
-            if total_pgs > 1
-            else ""
-        ),
+        embeds: list[discord.Embed],
+        page_turner: Optional[Union[discord.User, discord.Member]],
+        embed_editor: Optional[
+            Callable[[discord.Embed, 'Multi_Page_Embed_Message'], Optional[discord.Embed]]
+        ] = None,
     ):
-        """Creates multiple pages of embeds that can be sent as a single
-        message and have their pages turned using reactions.
+        """Takes a list of embeds to be sent as a single message that can have
+        its embeds cycled using reactions.
 
         Parameters
         -----------
-        items: Iterable[T]
-        The items to display in the embed. These will be converted into fields
-        to insert into embeds using `field_generator`.
+        embeds: list[discord.Embed]
+        The embeds to cycle between in the message.
 
-        title: Optional[str]
-        The title for every embed. This will be the same for every embed. If
-        `title` is `None` then the embeds will not be titled.
+        page_turner: Optional[Union[discord.User, discord.Member]]
+        The user that can turn pages in the embed. If `page_turner` is
+        `None` then any user can turn pages.
 
-        description: Optional[str]
-        The description for embeds. If `description_on_every_page` is `True`
-        then every embed will have `description` as its description. Otherwise,
-        only the first embed will have a description. If `description` is
-        `None`, then no embeds will have a description.
-
-        field_generator: Callable[[T], tuple[str, str, bool]]
-        A function that takes an item from `items` and returns a tuple that
-        contains the information used to create a field based on that item.
-        The first two elements in the tuple should be strings deciding the
-        field's name and value. The third element in the tuple should be a
-        boolean controlling whether or not the field should be inline.
-
-        page_turner: Optional[discord.Member]
-        The member that can turn pages in the embed. If `page_turner` is
-        `None` then any member can turn pages.
-
-        description_on_every_page: bool
-        Controls whether or not embeds after the first one should be given the
-        description `description`, or whether the second embed onwards should
-        not have any descriptions. Doesn't do anything if `description` is
-        `None`.
-
-        max_field_count: int
-        The maximum number of fields an embed can have.
-
-        max_embed_len: int
-        The maximum UTF-16 length of every embed.
-
-        footer_generator: Optional[
-            Callable[[int, int, Optional[discord.Member], bool], str]
+        embed_editor: Optional[
+            Callable[[discord.Embed, Multi_Page_Embed_Message], Optional[discord.Embed]]
         ]
-        A function that generates footers for every embed. Its arguments are
-        the current page, the total number of pages, the member that can turn
-        pages, and whether or not the embed can still have its pages turned.
-        The function is called for every embed once when filling in the embeds
-        with `True` as its final argument if there are multiple embeds and
-        `False` if there aren't. If there are multiple embeds, then the
-        function is called once more when the embed can no longer have its
-        pages turned with `False` as its final argument. If `footer_generator`
-        is `None` then embeds will not be given footers.
+        A function called once the multi page embed message times out an can
+        no longer have its pages cycled. It takes the last embed displayed and
+        the multi page embed message as parameters and returns a new embed to
+        display in the image. If `embed_editor` is or returns `None` then no
+        changes will be made to the message after it becomes inactive.
         """
         self.page_turner = page_turner
         self.page = None
         self.msg = None
-        self._footer_generator = footer_generator
-        self._create_pages(
-            items,
-            title,
-            description,
-            field_generator,
-            description_on_every_page,
-            max_field_count,
-            max_embed_len,
-        )
+        self.pages = embeds
+        self._embed_editor = embed_editor
 
     async def send(
         self,
-        channel: discord.TextChannel,
+        channel: discord.abc.Messageable,
         page_turn_timeout: int = 180,
         blocking: bool = False,
     ) -> None:
@@ -1033,17 +971,17 @@ class Multi_Page_Embed_Message:
 
         Parameters
         -----------
-        channel: discord.TextChannel
+        channel: discord.abc.Messageable
         The channel to send the multi page embed to.
 
         page_turn_timeout: int
         How long in seconds until the multi page embed's pages can no longer
-        be turned. Turning a page resets the timer to `page_turn_timeout`
+        be cycled. Turning a page resets the timer to `page_turn_timeout`
         again.
 
         blocking: bool
         Whether or not the method should block execution until the multi page
-        embed's pages can no longer be turned.
+        embed's pages can no longer be cycled.
         """
         if self.pages:
             self.page = 0
@@ -1054,17 +992,83 @@ class Multi_Page_Embed_Message:
                 else:
                     asyncio.ensure_future(self._wait_for_page_turn(page_turn_timeout))
 
-    def _create_pages(
-        self,
+    @staticmethod
+    def embed_list_from_items(
         items: Iterable[T],
-        title: Optional[str],
-        description: Optional[str],
+        title_generator: Optional[Callable[[int], Optional[str]]],
+        description_generator: Optional[Callable[[int], Optional[str]]],
         field_generator: Callable[[T], tuple[str, str, bool]],
-        description_on_every_page: bool,
-        max_field_count: int,
-        max_embed_len: int,
-    ):
-        """Creates the embeds for the multi page embed message."""
+        page_turner: Optional[Union[discord.User, discord.Member]],
+        *,
+        description_on_every_page: bool = True,
+        max_field_count: int = 25,
+        max_embed_len: int = 6000,
+        footer_generator: Optional[
+            Callable[
+                [int, int, Optional[Union[discord.User, discord.Member]]], Optional[str]
+            ]
+        ] = lambda pg, total_pgs, pg_turner: (
+            (
+                f" Requested by {pg_turner.name}#{pg_turner.discriminator}"
+                if pg_turner is not None
+                else ""
+            )
+            + (" | " * (pg_turner is not None and total_pgs > 1))
+            + (
+                f"Page {pg}/{total_pgs}. React with ⬅️ or ➡️ to turn the pages."
+                * (total_pgs > 1)
+            )
+        ),
+    ) -> list[discord.Embed]:
+        """Creates a list of `discord.Embed`s from with one field per item
+        from `items` with as many fields on one embed as possible.
+
+        Parameters
+        -----------
+        items: Iterable[T]
+        The items to display in the embeds. These will be converted into
+        fields to insert into the embeds using `field_generator`.
+
+        title_generator: Optional[Callable[[int], Optional[str]]]
+        The function that creates titles for every embed. The current embed
+        number is passed to the function. If `title_generator` returns `None`
+        then the embed will not be titled. If `title_generator` is `None`,
+        then all embeds will not be given titles.
+
+        description_generator: Optional[Callable[[int], Optional[str]]]
+        The function that creates descriptions for embeds. The current embed
+        number is passed to the function. If `description_generator` returns
+        `None`, then the embed will not have a description. If
+        `description_generator` is `None`, then all embeds will not be given descriptions.
+
+        field_generator: Callable[[T], tuple[str, str, bool]]
+        A function that takes an item from `items` and returns a tuple that
+        contains the information used to create a field based on that item.
+        The first two elements in the tuple should be strings deciding the
+        field's name and value. The third element in the tuple should be a
+        boolean controlling whether or not the field should be inline.
+
+        page_turner: Optional[Union[discord.User, discord.Member]]
+        The user that can turn pages in the embed. If `page_turner` is
+        `None` then any user can turn pages.
+
+        max_field_count: int
+        The maximum number of fields an embed can have.
+
+        max_embed_len: int
+        The maximum UTF-16 length of every embed.
+
+        footer_generator: Optional[
+            Callable[[int, int, Optional[Union[discord.User, discord.Member]]], str]
+        ]
+        A function that generates footers for every embed. Its arguments are
+        the current page, the total number of pages, and the user that can
+        turn pages (or `None` if any user can turn pages). The function is
+        called for every embed once when filling in the embeds. If
+        `footer_generator` returns `None` then the embed will not be given a
+        footer. If `footer_generator` is `None` then all embeds will not be
+        given footers.
+        """
 
         # Tries to estimate the longest possible length for a footer to so
         # that the code can try to keep the length of each embed within
@@ -1072,22 +1076,23 @@ class Multi_Page_Embed_Message:
         # that exceed the length of this estimate will be shortened to keep
         # the length of embeds within max_embed_len
         sample_footer_len = (
-            max(
-                utf16_len(self._footer_generator(999, 999, self.page_turner, True)),
-                utf16_len(self._footer_generator(999, 999, self.page_turner, False)),
-            )
-            if self._footer_generator is not None
+            utf16_len(footer_generator(999, 999, page_turner) or "")
+            if footer_generator is not None
             else 0
         )
 
         # Create the first embed
         embed = discord.Embed()
-        if title is not None:
-            embed.title = title
-        if description is not None:
-            embed.description = description
+        if title_generator is not None:
+            title = title_generator(0)
+            if title is not None:
+                embed.title = title
+        if description_generator is not None:
+            description = description_generator(0)
+            if description is not None:
+                embed.description = description
 
-        self.pages = [embed]
+        embeds = [embed]
 
         # Fill in embeds
         for item in items:
@@ -1106,31 +1111,37 @@ class Multi_Page_Embed_Message:
                 # If the field can not fit in the embed, insert it into a new
                 # embed.
                 embed = discord.Embed()
-                if title is not None:
-                    embed.title = title
-                if description is not None and description_on_every_page:
-                    embed.description = description
-                self.pages.append(embed)
+                if title_generator is not None:
+                    title = title_generator(len(embeds))
+                    if title is not None:
+                        embed.title = title
+                if description_generator is not None:
+                    description = description_generator(len(embeds))
+                    if description is not None:
+                        embed.description = description
+                embeds.append(embed)
 
             # Add item's field
             embed.add_field(name=name, value=value, inline=False)
 
         # Add footers to embeds
-        if self._footer_generator is not None:
-            for index, page in enumerate(self.pages):
+        if footer_generator is not None:
+            for index, page in enumerate(embeds):
                 max_footer_len = max_embed_len - utf16_embed_len(page)
                 page_num = index + 1
-                can_turn = len(self.pages) > 1
 
-                footer_text = max_utf16_len_string(
-                    self._footer_generator(
-                        page_num, len(self.pages), self.page_turner, can_turn
-                    ),
-                    maxlen=max_footer_len,
-                    add_ellipsis=False,
-                )
-                if footer_text:
-                    page.set_footer(text=footer_text)
+                footer_text = footer_generator(page_num, len(embeds), page_turner)
+
+                if footer_text is not None:
+                    page.set_footer(
+                        text=max_utf16_len_string(
+                            footer_text,
+                            maxlen=max_footer_len,
+                            add_ellipsis=False,
+                        )
+                    )
+
+        return embeds
 
     async def _update_msg(self):
         """Re-fetches the sent message in order to get an updated list of its
@@ -1155,7 +1166,7 @@ class Multi_Page_Embed_Message:
         await self.msg.add_reaction(self._rarrow)
 
         # Keep turning pages until the function times out waiting for a
-        # page to be turned or an exception is thrown.
+        # page to be cycled or an exception is thrown.
         while True:
             try:
                 reaction, reactor = await client.wait_for(
@@ -1190,8 +1201,8 @@ class Multi_Page_Embed_Message:
                 await reaction.remove(reactor)
 
             except asyncio.TimeoutError:
-                # After timing out waiting for a page to be turned remove
-                # reactions, update the message's footer and return.
+                # After timing out waiting for a page to be cycled remove
+                # reactions, update the message's embed and return.
 
                 # Make sure the message still exists.
                 await self._update_msg()
@@ -1206,14 +1217,8 @@ class Multi_Page_Embed_Message:
                     except discord.HTTPException:
                         pass
 
-                    if self._footer_generator is not None:
-                        page_num = self.page + 1
-                        can_turn = False
-
-                        new_footer_text = self._footer_generator(
-                            page_num, len(self.pages), self.page_turner, can_turn
-                        )
-                        if new_footer_text != self.msg.embeds[0].footer:
-                            self.pages[self.page].set_footer(text=new_footer_text)
-                            await self.msg.edit(embed=self.pages[self.page])
+                    if self._embed_editor is not None and self.page is not None:
+                        new_embed = self._embed_editor(self.pages[self.page], self)
+                        if new_embed is not None:
+                            await self.msg.edit(embed=new_embed)
                 return

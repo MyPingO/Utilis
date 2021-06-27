@@ -5,6 +5,7 @@ from cmd import Bot_Command, bot_commands
 from utils import (
     utf16_len,
     utf16_embed_len,
+    max_utf16_len_string,
     format_max_utf16_len_string,
     Multi_Page_Embed_Message,
 )
@@ -45,15 +46,34 @@ class Help_Command(Bot_Command):
             title = "Commands"
             description = "Run `help <command>` to get detailed information about a specific command."
 
-            help_embeds = Multi_Page_Embed_Message(
+            def embed_editor(
+                embed: discord.Embed, paged_embed_msg: Multi_Page_Embed_Message
+            ) -> discord.Embed:
+                if paged_embed_msg.page is not None:
+                    embed.set_footer(text="")
+                    max_footer_len = 6000 - utf16_embed_len(embed)
+
+                    new_footer = max_utf16_len_string(
+                        f" Requested by {msg.author.name}#{msg.author.discriminator} |"
+                        + f" Page {paged_embed_msg.page + 1}/{len(paged_embed_msg.pages)}.",
+                        max_footer_len,
+                        add_ellipsis=False,
+                    )
+                    embed.set_footer(text=new_footer)
+
+                return embed
+
+            help_embeds = Multi_Page_Embed_Message.embed_list_from_items(
                 commands,
-                title,
-                description,
+                lambda i: title,
+                lambda i: description,
                 lambda c: (c.name, c.short_help, False),
                 msg.author,
             )
 
-            await help_embeds.send(msg.channel)
+            await Multi_Page_Embed_Message(help_embeds, msg.author, embed_editor).send(
+                msg.channel
+            )
 
     async def get_command_info(
         self,
