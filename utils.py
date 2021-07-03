@@ -753,7 +753,8 @@ async def wait_for_reply(
             check=lambda m: m.author == member and m.channel == channel,
             timeout=timeout,
         )
-        return response.content
+        print(type(response))
+        return response
     except asyncio.TimeoutError:
         # if no response is given within 60 seconds
         if error_message is not None:
@@ -872,3 +873,20 @@ def split_args(args: str, treat_comma_as_space: bool = False) -> list[str]:
     ret = [_re_remove_escaped_quote.sub(r'\1"', s).replace("\\\\", "\\") for s in ret]
 
     return ret
+
+# to delete empty directories when empty folders are not needed
+def delete_empty_directories (directory, base_path):
+    # base_path is the inner-most directory that acts as a stopping point
+    # in the case that you accidentally delete a folder that's needed even if it's empty
+    if directory == base_path:
+        return
+    # base case: if there is something in the current directory, return
+    if any(directory.iterdir()):
+        return
+    # delete directort if it's empty
+    directory.rmdir()
+    # set the directory to it's parent i.e the directory before the current directory ---> folder1/folder2/folder3
+    # where folder3 is current directory and folder2 is the parent file
+    directory = directory.parent
+    # run the recursive function with new directory
+    delete_empty_directories(directory, base_path)
