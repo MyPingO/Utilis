@@ -1,27 +1,29 @@
-import json
-import re
 import discord
+import shutil
+import json
 from cmd import Bot_Command, bot_commands
-
-from discord import guild
+from main import bot_prefix
 from commands.help import help_cmd
 from random import choice
 from pathlib import Path
 from random import choice
-from utils import user_select_from_list, wait_for_reply, format_max_utf16_len_string
+from utils import user_select_from_list, wait_for_reply, format_max_utf16_len_string, split_args as split_args_helper, delete_empty_directories
 from core import client
 from typing import Optional
 
+#TODO make sure can_run or some check of admin perms is done for every command
 async def link_check(link, msg):
+    if type(link) == discord.message.Message:
+        link = link.content
     if (link.casefold().startswith("http://") and len(link) > len("http://")) or (
         link.casefold().startswith("https://") and len(link) > len("https://")):
         return link
     else: 
-        await msg.channel.send("Please enter a proper link. Example: http://example.com **or** https://example.com\nYou can also type **stop** to remove all changes and stop the command.")
+        await msg.channel.send("Please enter a proper link. Example: http://example.com **or** https://example.com\nYou can also type **Stop** to exit the command.")
         link = await wait_for_reply(msg.author, msg.channel)
-        if link == "stop":
-            await msg.channel.send("Stopping command. No changes were made")
-            return link
+        if link.content == "stop":
+            await msg.channel.send("No changes were made")
+            return link.content
         else:
             return await link_check(link, msg)
 
@@ -29,21 +31,17 @@ async def link_check(link, msg):
 class Random_Color:
     # chooses random color for embed messages
     color = [
-        0x000000,  # black
-        0x00FF00,  # lime/bright green
-        0xFF0000,  # red
-        0x38E31F,  # green
-        0xA434EB,  # purple
-        0x0082FF,  # blue
-        0xE08200,  # orange/light brown
-        0xFF7DFF,  # pink
-        0xFEFFFF,  # white
+        0xb86363,  # red
+        0x63b87e,  # green
+        0x8652dc,  # purple
+        0x5297dc,  # blue
     ]
     tempColor = -1
 
     def get_color(self):
         # choice() is from random library
         randomColor = choice(self.color)
+        # make sure no duplicate color i.e random picker picks same color twice+ in a row
         while self.tempColor == randomColor:
             randomColor = choice(self.color)
         self.tempColor = randomColor
@@ -57,26 +55,32 @@ class Assignment_Command(Bot_Command):
 
     short_help = "Shows a detailed explanation of the specified assignment including relevant links, hints and solutions for the specified class."
 
-    long_help = """Specify the assignment you want help with: $[class_number][assignment_number] Example: $211 1 **or** $212 3
+    long_help = """Specify the assignment you want help with: $[class_number] [assignment_number] Example: $211 1 **or** $212 3
 
     **Sub-commands:**
         $[class_number] assignments
+        $[class_number] syllabus
         $[class_number] addurl [assignment_number] [url] [title]
-        $[class_number] solution [assignment_number] **NOTE:** Solutions to assignments are only available after their due date!
-
+        $[class_number] solution [assignment_number(s)]
+        $[class_number] solution add
     """
 
     admin_long_help = """**ADMINS ONLY:**
+    $[class_number] solution delete
     $[class_number] add [assignment_number]
     $[class_number] edit [assignment_number]
-    $[class-number] pending [assignment_number]
-    $[class_number] removeurl [assignment_number] [title_of_link]"""
+    $[class-number] pending [assignment_number(s)]
+    $[class_number] removeurl [assignment_number] [title_of_link]
+    $[class_number] syllabus add
+    $[class_number] syllabus delete"""
 
-    def __init__(self, add_class, class_name, class_info, guild_id): #TODO: SEE IF NEEDED
+    syllabus_path = Path("data/syllabus")
+
+    def __init__(self, add_class, class_name, class_info, guild_id):
         self.name = class_name  # example (211 or 212)
         # JSON part of the file that accesses the class_name
         self.class_info = class_info # all the info of the class
-        self.add_class = add_class
+        self.add_class = add_class # used when needed access of save_assignment() or solutions_path etc.
         self.guild_id = guild_id #the guild_id of the specific discord server
         #print(self.class_info) <---- example of class_info
 
@@ -88,21 +92,13 @@ class Assignment_Command(Bot_Command):
 
     # helper function to take a specific answer for reviewing pending links
     async def approve_deny_multiple(self, msg, assignment_num):
-        # waits for a response from the command author and channel for 10 seconds
-        try:
-            response = await client.wait_for(
-                "message",
-                check=lambda m: m.author == msg.author and m.channel == msg.channel,
-                timeout=30,
-            )
-            # if no response is given within 10 seconds
-        except:
-            await msg.channel.send("Error: You took too long to respond")
-            return None
-
-        # splits resposne into smaller parts divided by a space
-        response = re.split(r"[,，\s]\s*", response.content)
-
+        # waits for a response from the command author and channel for 60 seconds
+        response = await wait_for_reply(msg.author, msg.channel)
+        if response == None or response.content.casefold() == "stop":
+            await msg.channel.send("No edits were made.")
+            return
+        # splits resposne i.e the links to approve/deny into into a list. Ex: ["Approve", "1", "3"]
+        response = split_args_helper(response.content, True)
         """split_response[0] = approve/deny
            split_response[1:] = pending links to approve/deny """
         approve_or_deny = response[0]
@@ -114,7 +110,7 @@ class Assignment_Command(Bot_Command):
             or approve_or_deny.casefold() == "deny"
         ):
             await msg.channel.send(
-                "Error: You answered incorrectly! To approve or deny a link, type **approve** or **deny** followed by the number of the link you want to approve/deny\n Example: **approve 1** or **deny 3**. You can also approve/deny multiple links at once like this **approve 1 2 3** or **deny 4 5 6**."
+                "Error: You answered incorrectly! To approve or deny a link, type **Approve** or **Deny** followed by the number of the link you want to edit\nExample: **Approve 1** or **Deny 3**. You can also approve/deny multiple links at once like this **approve 1 2 3** or **deny 4 5 6**."
             )
             return
 
@@ -132,7 +128,7 @@ class Assignment_Command(Bot_Command):
                 or link_choice[i] < 0
             ):
                 await msg.channel.send(
-                    "Error: One or more of the links you want to edit doesn't exist in the queue!"
+                    "Error: One or more of the links you want to edit does not exist in the queue!"
                 )
                 return
         # checks for duplicate numbers in response
@@ -144,22 +140,21 @@ class Assignment_Command(Bot_Command):
         link_choice.reverse()
         # if user wants to approve, append to the Relevant Links list and remove from the pending list
         if approve_or_deny.casefold() == "approve":
-            for i in link_choice:
+            for requested_url in link_choice:
                 self.class_info["assignments"][assignment_num]["relevant_links"].append(
-                    self.class_info["assignments"][assignment_num]["requested_urls"][i]
+                    self.class_info["assignments"][assignment_num]["requested_urls"][requested_url]
                 )
-                self.class_info["assignments"][assignment_num]["requested_urls"].pop(i)
+                self.class_info["assignments"][assignment_num]["requested_urls"].pop(requested_url)
             self.add_class.save_assignments(self.guild_id)
             await msg.channel.send("Successfully added links to Relevant Links!")
             return
         # if user wants to deny, remove from the pending list
         if approve_or_deny.casefold() == "deny":
-            for i in link_choice:
-                self.class_info["assignments"][assignment_num]["requested_urls"].pop(i)
+            for requested_url in link_choice:
+                self.class_info["assignments"][assignment_num]["requested_urls"].pop(requested_url)
             self.add_class.save_assignments(self.guild_id)
             await msg.channel.send("Successfully removed links from the queue!")
             return
-
     async def run(self, msg: discord.Message, args: str):
         # if user types [class_name] and thats it ex: $211
         if not args:
@@ -186,7 +181,7 @@ class Assignment_Command(Bot_Command):
             )
             # extra embed stuff
             description.set_footer(
-                text="If you still need help with this assignment after reading this embed message, please don't hesitate to ask!"
+                text="If you still need help with this assignment after reading this, please don't hesitate to ask!"
             )
             await msg.channel.send(embed=description)
             urls = ""
@@ -330,7 +325,7 @@ class Assignment_Command(Bot_Command):
                 color=no_duplicate_random_color.get_color(),
             )
             await msg.channel.send(embed=pending_links)
-
+            await msg.channel.send("Approve or Deny links by typing \"Approve\" or \"Deny\" followed by the link number(s) you want to edit. Example: **Approve 1** or **Deny 2, 3**. Type **Stop** to exit the command.")
             # waits for user to approve/deny a link(s)
             await self.approve_deny_multiple(msg, assignment_num)
 
@@ -382,40 +377,236 @@ class Assignment_Command(Bot_Command):
             )
             return
 
-        # gives the solution to an assignment (solutions should be added after their due date)
-        # $211 solution 1
-        elif args.casefold().startswith("solution "):
-            # make solution_choice = assignment# i.e everything after "solution "
-            solution_choice = args[len("solution") :].strip()
-            # checks if assignment# is a number
-            if not solution_choice.isdigit():
-                await msg.channel.send(
-                    "Error: You did not enter a valid assignment number for the solution you want"
-                )
-                return
-            if not (self.add_class.solutions_path / self.name).exists():
-                await msg.channel.send("Error: There are no assignment solutions for this class yet!")
-                return
-            # check if the assignment solution exists in $class_name folder using "pathway/self.name" (self.name = $211 or $212 command)
-            for i in (self.add_class.solutions_path / self.name).iterdir():
-                # gets rid of .cpp Ex: 1.cpp -> 1
-                if i.name.split(".")[0] == solution_choice:
-                    # opens the file that was matched with i.name.split (ex: 1.cpp) as a variable
-                    with i.open("r") as assignment_solution:
-                        # send the file as an embed msg
-                        await msg.channel.send(
-                            file=discord.File(
-                                assignment_solution,
-                                f"Assignment {i.name.split('.')[0]} Solution",
-                            )
-                        )
+        # add, delete or give the solution to an assignment (solutions should be added after their due date)
+        elif args.casefold().startswith("solution ") or args.casefold().startswith("solutions "):
+            # adding this "if else" because it may be intuitive to type "solutions" when adding or viewing multiple solutions
+            if args.casefold().startswith("solution "):
+                solution_choice = args[len("solution") :].strip()
+            else:
+                solution_choice = args[len("solutions") :].strip()
+            # $211 solution add
+            if solution_choice.casefold() == "add":
+                # get added assignment names into a list
+                assignments = []
+                for assignment_num in self.class_info["assignments"]:
+                    assignments.append(assignment_num)
+                await msg.channel.send("Which assignment solution do you want to add?")
+                # choose which assignment to add a solution to. If no choice is given, return
+                assignment_num = await user_select_from_list(msg.channel, assignments, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
+                if assignment_num == None:
+                    return
+                # set a directory where solutions will be stored
+                solution_directory = (self.add_class.solutions_path/self.guild_id/self.name/assignment_num/str(msg.author.id))
+                await msg.channel.send("Enter a name for your solution. Your name can only contain letters or numbers. Type **\Stop/** to stop adding a solution.")
+                # while True loop that keeps asking to correct errors if any occur i.e file name exists or ivalid file name 
+                # unless user types "stop" in which case, return
+                while True:
+                    solution_name = await wait_for_reply(msg.author, msg.channel)
+                    if solution_name.content.casefold() == "\stop/":
+                        await msg.channel.send("No changes were made")
+                        return
+                    elif (solution_directory/solution_name.content).exists():
+                        await msg.channel.send("You have already submitted a solution with that name. Please enter a different name or type **\Stop/** to stop adding a solution.")
+                        continue
+                    # goes through each charcter in the name to check if it's either a letter, number or space. If it's not, ask for a new name.
+                    elif not all(character.isalnum() or character.isspace() for character in solution_name.content):
+                        await msg.channel.send("Your solution name contained characters that were not letters or numbers! Please enter another name or type **\Stop/** to stop adding a solution.")
+                        continue
+                    else:
+                        break
+                # set a new solution directory with a folder named after the solution name given and then create that directory
+                solution_directory = (solution_directory/solution_name.content)
+                solution_directory.mkdir(parents = True)
+                await msg.channel.send(f"Drag in your solution file(s) to assignment {assignment_num}. When you are finished, type **Done** to stop adding files.")
+                # keep asking for files to add to the solution folder
+                while True:
+                    # delete empty folders using delete_empty_directories() if no files given or user is done giving files. 
+                    # More info on the function in utils.py
+                    solution = await wait_for_reply(msg.author, msg.channel, timeout = 15)
+                    if solution == None:
+                        delete_empty_directories(solution_directory, self.add_class.solutions_path)
+                        return
+                    if solution.content.casefold() == "done":
+                        if not any(solution_directory.iterdir()):
+                            delete_empty_directories(solution_directory, self.add_class.solutions_path)
+                            await msg.channel.send("No changes were made.")
+                            return
+                        else:
+                            await msg.channel.send("Your files have been added successfully!")
+                            return
+                    #if no attachment was given
+                    elif not solution.attachments:
+                        await msg.channel.send("Error: No attachments given.")
+                        return
+                    
+                    # using a for loop to go through attachments becuase mobile allows for multiple atachments per message 
+                    # just in case a mobile user tries to add a solution
 
-            # if the solution requested is not found in folder
-            await msg.channel.send(
-                "Error: The solution to the assignment you are looking for either does not exist or hasn't been added yet. If this is the case, ping a mod!"
-            )
-            return
-
+                    # check if the file given is an empty file i.e file size is 0bytes
+                    for attachment in solution.attachments:
+                        if attachment.size == 0:
+                            await msg.channel.send(f"Error: **{attachment.filename}** is an empty file! Please make sure you submit attachments that are not empty.")
+                            return
+                    # check if a solution with the same filename already exists
+                    for attachment in solution.attachments:
+                        same_file_name = False
+                        for solution_file in solution_directory.iterdir():
+                            if attachment.filename == solution_file.name:
+                                same_file_name = True
+                                await msg.channel.send(f"A file with the name **{attachment.filename}** already exists! Please resubmit the file with a new name.")
+                                break
+                        if same_file_name == True:
+                            break
+                    if same_file_name == True:
+                        continue
+                    # confirm that the attachments given are valid and correct
+                    confirm_or_deny = ["Confirm", "Deny"]
+                    for attachment in solution.attachments:
+                        await msg.channel.send(f"Please confirm that **{attachment.filename}** is the correct solution file for Assignment {assignment_num}.")
+                        response = await user_select_from_list(msg.channel, confirm_or_deny, lambda x: x, msg.author, "Confirm or Deny", timeout=30)
+                        # add file to directory if user confirms
+                        if response == "Confirm":
+                            await attachment.save(solution_directory/f"{attachment.filename}")
+                            await msg.channel.send("File added!")
+                        else:
+                            # delete empty directories if no files were added
+                            delete_empty_directories(solution_directory, self.add_class.solutions_path)
+                            await msg.channel.send("Edits have been denied! No changes were made.")
+                            return
+                    await msg.channel.send("Enter the next file or type **Done** if you are finished.")
+            # $211 solution delete
+            elif solution_choice.casefold() == "delete":
+                print("Deleting solutions")
+                # get assignment numbers in a list to choose from
+                assignments = []
+                for assignment_num in self.class_info["assignments"]:
+                    assignments.append(assignment_num)
+                await msg.channel.send("Which assignment solution do you want to delete?")
+                assignment_num = await user_select_from_list(msg.channel, assignments, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
+                if assignment_num == None:
+                    return    
+                # set solution directory with their assignment choice
+                solution_directory = (self.add_class.solutions_path/self.guild_id/self.name/assignment_num)
+                # if there are no solutions to delete for the chosen assignment
+                if not solution_directory.exists() or not any(solution_directory.iterdir()):
+                    await msg.channel.send("There are no solutions added to this assignment for you to delete.")
+                    return
+                # ask who's solution you want to delete since there can be multiple solutions sent by different people
+                # create two lists: one with user id's to search for their directory and another for that user's discord name
+                username_list = []
+                user_id_list = []
+                for user_id in solution_directory.iterdir():
+                    # discord's get_member() function to get the name of a user_id, Ex: 87954609457609458 --> EpicUsername123
+                    member = msg.guild.get_member(int(user_id.name))
+                    # add user ID's and usernames to respective lists
+                    username_list.append(str(member))
+                    user_id_list.append(user_id.name)
+                await msg.channel.send("Whose solution(s) do you want to delete?")
+                solution_author = await user_select_from_list(msg.channel, username_list, lambda x: x, msg.author, "", 30)
+                if solution_author == None:
+                    return
+                # get the corresponding user ID of the username chosen by user
+                user_id = user_id_list[username_list.index(solution_author)]
+                # set new solution directory to access chosen user's solutions
+                solution_directory = solution_directory/user_id
+                # get a list of all solution folders (names) uploaded by chosen user
+                solutions_list = []
+                for solution_folder in solution_directory.iterdir():
+                    solutions_list.append(solution_folder.name)
+                #if there is more than one solution ask user to choose which one to delete
+                if len(solutions_list) > 1:
+                    await msg.channel.send(f"**{solution_author}** has uploaded multiple solution versions for Assignment {assignment_num}. Which version do you want to delete?")
+                    solution_name = await user_select_from_list(msg.channel, solutions_list, lambda x: x, msg.author, "", 30)
+                    if solution_name == None:
+                        return
+                    # confirm deletion with user
+                    await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE__ {solution_author}'s Solution: {solution_name} __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
+                    yes_or_no = ["Yes", "No"]
+                    response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                    if response == "Yes":
+                        #using shutil.rmtree() to remove directory if it is not empty as opposed to .rmdir() which can only remove empty directories/folders
+                        shutil.rmtree(solution_directory/solution_name.content)
+                        await msg.channel.send(f"**{solution_name.content}** has been removed from assignment {assignment_num}!")
+                    else:
+                        await msg.channel.send(f"**{solution_name.content}** was not deleted from assignment {assignment_num}.")
+                    return
+                else:
+                    #if there's only one solution added by the solution author
+                    solution_name = solutions_list[0]
+                    await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE__ {solution_author}'s Solution: {solution_name} __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
+                    yes_or_no = ["Yes", "No"]
+                    response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                    if response == "Yes":
+                        shutil.rmtree(solution_directory)
+                        await msg.channel.send(f"**{solution_author}'s** solution has been removed from Assignment {assignment_num}!")
+                    else:
+                        await msg.channel.send(f"**{solution_author}'s** solution was not deleted from Assignment {assignment_num}.")
+                    return
+            else:
+                print("Getting Solutions")
+                if not (self.add_class.solutions_path / self.guild_id).exists():
+                    await msg.channel.send("There are no assignment solutions added to this server yet!")
+                    return
+                solution_choice_list = split_args_helper(solution_choice, True)
+                # user might intuitively try to run the command like this: $211 solution add 1 or $211 solution delete 1
+                # since this is the wrong syntax because assignment number isn't specified with adding or deleting a solution
+                # send a message to let them know the format is wrong
+                if "add" in solution_choice_list:
+                    await msg.channel.send(f"Error: To add a solution to an assignment in the **{self.name}** class. Type **{bot_prefix}{self.name} solution add**")
+                    return
+                if "delete" in solution_choice_list:
+                    await msg.channel.send(f"Error: To delete a solution to an assignment in the **{self.name}** class. Type **{bot_prefix}{self.name} solution delete**")
+                    return
+                for assignment_num in solution_choice_list.copy():
+                    solution_directory = (self.add_class.solutions_path / self.guild_id / self.name / assignment_num)
+                    # if an assignment doesn't exist in the specified class i.e 211 or 212
+                    if assignment_num not in self.class_info["assignments"]:
+                        # let user know assignment doesn't exist
+                        await msg.channel.send(f"Assignment **{assignment_num}** does not exist!")
+                        solution_choice_list.remove(assignment_num)
+                        continue
+                    # if the solution to an assignment doesn't exist, remove it from the solution_choice_list
+                    if not solution_directory.exists() or not any(solution_directory.iterdir()):
+                        await msg.channel.send(f"There are no solutions for Assignment **{assignment_num}** yet!")
+                        solution_choice_list.remove(assignment_num)
+                # go through each solution in the each assignment's directory
+                for assignment_num in solution_choice_list:
+                    solution_directory = (self.add_class.solutions_path / self.guild_id / self.name / assignment_num)
+                    username_list = []
+                    user_id_list = []
+                    # do the same thing with names and user ID's as mentioned above when deleting solutions
+                    for user_id in solution_directory.iterdir():
+                        member = msg.guild.get_member(int(user_id.name))
+                        username_list.append(str(member))
+                        user_id_list.append(user_id.name)
+                    await msg.channel.send(f"Whose solution do you want to view for Assignment **{assignment_num}**?")
+                    solution_author = await user_select_from_list(msg.channel, username_list, lambda x: x, msg.author, "", 30)
+                    if solution_author == None:
+                        return
+                    user_id = user_id_list[username_list.index(solution_author)]
+                    # set a new directory
+                    solution_directory = solution_directory/user_id
+                    # get a list of all solutions added by the solution_author
+                    solutions_list = []
+                    for solution_folder in solution_directory.iterdir():
+                        solutions_list.append(solution_folder.name)
+                    # if the solution_author has uploaded multiple solution versions ask which one to view
+                    if len(solutions_list) > 1:
+                        await msg.channel.send(f"**{solution_author}** has uploaded multiple solution versions for Assignment {assignment_num}. Which version do you want to view?")
+                        solution_version = await user_select_from_list(msg.channel, solutions_list, lambda x: x, msg.author, "", 30)
+                        if solution_version == None:
+                            return
+                        await msg.channel.send(f"Here are all the files in the **{solution_version}** folder")
+                        for solution_file in (solution_directory/solution_version).iterdir():
+                            with solution_file.open("rb") as download_file:
+                                await msg.channel.send(file=discord.File(download_file, solution_file.name))
+                    # if the solution_author has uploaded one solution verson, send the files in it to the server to download
+                    else:
+                        await msg.channel.send(f"Here are the solution files **{solution_author}** submitted for Assignment {assignment_num}.")
+                        for solution_file in (solution_directory/solutions_list[0]).iterdir():
+                            with solution_file.open("rb") as download_file:
+                                await msg.channel.send(file=discord.File(download_file, solution_file.name))
+                return        
         # to add an assignment to a class
         # $211 add 1
         elif args.casefold().startswith("add "):
@@ -458,7 +649,8 @@ class Assignment_Command(Bot_Command):
                         break
                     await msg.channel.send(f"Please enter a {key} for this assignment")
                     # get their input for either title, url or description
-                    key_value = await wait_for_reply(msg.author, msg.channel)
+                    key_value = await wait_for_reply(msg.author, msg.channel, timeout=300)
+                    key_value = key_value.content
                     if key_value == None:
                         return
                     # if they are setting a title (i.e key_counter == 0)
@@ -477,7 +669,7 @@ class Assignment_Command(Bot_Command):
                     # set their edits to what they wanted to edit if it passes all tests
                     new_assignment[key] = key_value
                     key_counter += 1
-                # save assignments to update the json file in real time
+                # save assignments to update the JSON file in real time
                 self.class_info["assignments"][assignment_num] = new_assignment
                 self.add_class.save_assignments(self.guild_id)
                 await msg.channel.send(
@@ -485,7 +677,7 @@ class Assignment_Command(Bot_Command):
                 )
                 return
 
-        # allows admin/user with admin permissions to edit assignments without having to open the json file (i.e in discord)
+        # allows admin/user with admin permissions to edit assignments without having to open the JSON file (i.e in discord)
         # 211 edit 1
         elif args.casefold().startswith("edit "):
             # if the user is not an admin/has admin permissions
@@ -518,24 +710,30 @@ class Assignment_Command(Bot_Command):
                 # edit_choice can either be a title, url or description
                 edit_choice = await user_select_from_list(msg.channel, edit_list, lambda x: x, msg.author, f"Edit Options For Assignment {assignment_num}", timeout=30,
                 )
-                # if what is already stored in their edit_choice for the assignment is longer than 1900 characters,
+                if edit_choice == None:
+                    return
+                # if what is already stored in their edit_choice for the assignment is longer than 1850 characters,
                 # display another message because of discord's 2000 word count limit (This is done because the bot won't be able to display edit_choice properly)
                 if (
                     len(self.class_info["assignments"][assignment_num][edit_choice])
-                    >= 1900
+                    >= 1850
                     or len(self.class_info["assignments"][assignment_num][edit_choice])
                     == 0
                 ):
                     await msg.channel.send(
-                        f"Please enter a new {edit_choice} for this assignment."
+                        f"Please enter a new {edit_choice} for this assignment or type **Stop** to exit the command."
                     )
-                # if current edit_choice is less than 1900 characters, print default message (includes preview of existing edit_choice)
+                # if current edit_choice is less than 1850 characters, print default message (includes preview of existing edit_choice)
                 else:
                     await msg.channel.send(
-                        f"The current {edit_choice} for assignment {assignment_num} is: **{self.class_info['assignments'][assignment_num][edit_choice]}**\n\nPlease enter the new {edit_choice} for this assignment."
+                        f"The current {edit_choice} for assignment {assignment_num} is: **{self.class_info['assignments'][assignment_num][edit_choice]}**\nPlease enter the new {edit_choice} for this assignment or type **Stop** to exit the command."
                     )
                 # if the new title they are trying to add is more than 100 characters, send an error message
                 edit = await wait_for_reply(msg.author, msg.channel)
+                edit = edit.content
+                if edit == "stop":
+                    await msg.channel.send("No changes were made.")
+                    return
                 if edit_choice == "title":
                     if len(edit) > 100:
                         await msg.channel.send(
@@ -589,24 +787,29 @@ class Assignment_Command(Bot_Command):
                     )
                     return
             return
+        # $211 delete 1, 2, 5
         elif args.casefold().startswith("delete "):
             split_args = args.split(" ", 1)
             """ split_args[0] = delete
                 split_args[1] = assignments to delete """
-            class_list = re.split(r"[,，\s]\s*", split_args[1])
-            for assignment_num in class_list:
+            # get a list of the assignments the user wants to delete
+            assignments_list = split_args_helper(split_args[1], True)
+            for assignment_num in assignments_list:
+                # if an assignment does not exist in the JSON file
                 if assignment_num not in self.class_info["assignments"].keys():
                     await msg.channel.send(f"Assignment **{assignment_num}** does not exist in the {self.name} class.")
                 else:
-                    await msg.channel.send(f"**ARE YOU SURE YOU WANT TO DELETE THE ASSIGNMENT `{assignment_num}` FROM THE {self.name} CLASS? THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!**")
+                    # confirm deletion of assignment with user
+                    await msg.channel.send(f"⚠️ **__ARE YOU SURE YOU WANT TO DELETE THE ASSIGNMENT__   {assignment_num}   __FROM THE {self.name} CLASS? THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__** ⚠️")
                     yes_or_no = ["Yes", "No"]
                     response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
-                    if response == "No" or response == None:
-                        await msg.channel.send("No assignments were deleted.")
-                    else:
+                    if response == "Yes":
+                        # if user cofirms, delete assignment from the JSON file, otherwise just do nothing
                         del self.class_info["assignments"][assignment_num]
                         self.add_class.save_assignments(self.guild_id)
                         await msg.channel.send(f"**{assignment_num}** was deleted from the list of classes. You will no longer be able to view or edit it!")
+                    else:
+                        await msg.channel.send("No assignments were deleted.")
             return
         # Send a list of all existing/added assignments for the class (self.name) listed in self.class_info["assignments"]
         # Syntax: $211 assignments
@@ -619,7 +822,7 @@ class Assignment_Command(Bot_Command):
                 self.class_info["assignments"].keys(), key=lambda num: int(num)
             ):
                 # adds sorted numbers to a list
-                assignments_list += f"**{assignment_num}**\n{self.class_info['assignments'][assignment_num]['title']}\n"
+                assignments_list += f"Assignment {assignment_num} - [{self.class_info['assignments'][assignment_num]['title']}]({self.class_info['assignments'][assignment_num]['url']})\n"
             # if there are no assignments for that class (i.e nothing in assignments_list), send a message
             if len(assignments_list) == 0:
                 await msg.channel.send(
@@ -631,12 +834,88 @@ class Assignment_Command(Bot_Command):
             )
             # using the embed field to increase character limit to 6000 and printing the assignments_list using the field
             assignments_embed.add_field(
-                name=f"{self.name} Existing Assignments", value=f"{assignments_list}"
+                name=f"{self.name} Existing Assignments\n", value=f"{assignments_list}"
             )
             await msg.channel.send(embed=assignments_embed)
 
-        # if they try to view an assignment that doesnt exist
-        # $869 %^7
+        # add, delete or view syllabus for a class
+        elif args.casefold().startswith("syllabus"):
+            print(args)
+            # $211 syllabus
+            if args.casefold() == "syllabus":
+                # next() returns the next item in an iterator, in this case the next thing in the directory which is the syllabus file
+                with next((self.syllabus_path/self.guild_id/self.name).iterdir()).open("rb") as download_file:
+                    await msg.channel.send(f"Here is the syllabus file for the **{self.name}** class.")
+                    await msg.channel.send(file=discord.File(download_file, download_file.name))
+                return
+            args = args[len("syllabus") :].strip()
+            # $211 syllabus add
+            if args.casefold() == "add":
+                # set a directory to store the syllabus in
+                syllabus_path = (self.syllabus_path/self.guild_id/self.name)
+                # check if the directory already exists i.e syllabus already added to that class
+                if syllabus_path.exists():
+                    await msg.channel.send(f"The syllabus to the {self.name} class has already been added. To view it type **{bot_prefix}{self.name} syllabus**. To delete it type **{bot_prefix}{self.name} syllabus delete**")
+                    return
+                # otherwise, create the directory
+                syllabus_path.mkdir(parents = True)
+                # while True loop to give user chance to retry incase of error 
+                # i.e no attachments given, more than one attachment given or attachment size is 0 bytes. 
+                while True:
+                    await msg.channel.send("Please submit the syllabus as a file or type **Stop** to exit the command")
+                    syllabus = await wait_for_reply(msg.author, msg.channel)
+                    if syllabus.content.casefold() == "stop":
+                        delete_empty_directories(syllabus_path, self.syllabus_path)
+                        await msg.channel.send("No changes were made.")
+                        return
+                    if not syllabus.attachments:
+                        await msg.channel.send("No attachments given!")
+                        continue
+                    if len(syllabus.attachments) > 1:
+                        await msg.channel.send("You may only attach one file!")
+                        continue
+                    if syllabus.attachments[0].size == 0:
+                        await msg.channel.send(f"**{syllabus.attachments[0].filename}** is an empty file!")
+                        continue
+                    else:
+                        break
+                # confirm with user if file is valid and correct
+                confirm_or_deny = ["Confirm", "Deny"]
+                await msg.channel.send(f"Please confirm that **{syllabus.attachments[0].filename}** is the correct syllabus for the **{self.name}** class!")
+                response = await user_select_from_list(msg.channel, confirm_or_deny, lambda x: x, msg.author, "", 30)
+                if response == "Confirm":
+                    # if user confirms, add file to directory
+                    await syllabus.attachments[0].save(syllabus_path/f"{syllabus.attachments[0].filename}")
+                    await msg.channel.send("Syllabus has been added!")
+                else:
+                    # otherwise, delete the directory and all of its parents
+                    delete_empty_directories(syllabus_path, self.syllabus_path)
+                    await msg.channel.send("No changes were made.")
+                return
+            # $211 syllabus delete
+            elif args.casefold() == "delete":
+                # if the user tries to delete a syllabus that doesn't exist
+                if not (self.syllabus_path/self.guild_id/self.name).exists():
+                    await msg.channel.send(f"Error: There are no syllabuses added to the **{self.name}** class to delete.")
+                    return
+                # otherwise, set a directory to access the syllabus file
+                syllabus_path = (self.syllabus_path/self.guild_id/self.name)
+                # confirm with user about deleting the syllabus
+                await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE THE SYLLABUS FOR THE CLASS__   {self.name}   __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
+                yes_or_no = ["Yes", "No"]
+                response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                if response == "Yes":
+                    # if user confirms, delete directory and all parent directories
+                    shutil.rmtree(syllabus_path)
+                    delete_empty_directories(syllabus_path, self.add_class.solutions_path)
+                    await msg.channel.send(f"{self.name} Syllabus deleted.")
+                    return
+                else:
+                    # otherwise do nothing
+                    await msg.channel.send("No changes were made.")
+                    return
+        # if they try to view an assignment or class that doesnt exist
+        # $211 %^7 or $lmao 69
         else:
             await msg.channel.send(
                 "Error: Either you typed in a command wrong, or the assignment you are looking for does not exist or has not yet been added to the bot. If this is the case, ping a mod.\nYou can use $[class_name] to get help with how to use this command. Example **$211** or **$212**"
@@ -644,29 +923,58 @@ class Assignment_Command(Bot_Command):
 
 # creates the command for every class dictionary (211 or 212) thats in the JSON File
 class addClass(Bot_Command):
-    
+    short_help = "Add or delete a class command or view all pending links in a class."
+    long_help = "View all classes on the server with **$class list**\n"
+    admin_long_help = """**ADMINS ONLY:**
+    $class add [class_number(s)]
+    $class delete [class_number(s)]
+    $class pending [class_number(s)] **View pending links in a class**
+    """
+
     name = "class"
-    # set variable to path of folders to call them later easier
+    # set variables to path of folders to call them later easily
     solutions_path = Path("data/assignments/solutions")
-    assignments_path = Path("data/assignments/assignments.json") # TODO: change back the file
-    commands = []  # classes (211, 212)
+    assignments_path = Path("data/assignments/assignments.json")
+    commands = []  # all commands on all servers (211, 212, 69, 420)
     def __init__(self):
         if not self.assignments_path.exists():
+            # if the JSON file doesn't exist i.e fresh bot with no added class commands
+            # create an empty dictionary to later put into a JSON file
             self.assignments_dict = {}
         else:
+            # if it does exist, set a dictionary = to the contents inside of the JSON file
+            # this dictionary will be used to store class information about assignments and whatnot
             with self.assignments_path.open() as file:
                 self.assignments_dict = json.load(file)
+            # for every guild_id (Which is a dictionary) in the JSON file
             for guild_id in self.assignments_dict.keys():
+                # and for every class inside each guild_id dictionary i.e 211 or 212
                 for class_name in self.assignments_dict[guild_id]:
+                    # add a command to the bot, that is server/guild specific to that command
+                    # Ex: One discord server may have a 211 command and another server might also have a 211 command
+                    # However one 211 command will be associated with some guild_id 975903478509349850 and the other with 234325894390853049
+                    # this makes it possible to use the same command but store different info for them and prevents use of same command on another server
                     self.add_Class(class_name, self.assignments_dict[guild_id][class_name], guild_id)
 
+    def get_help(self, member: Optional[discord.Member], args: Optional[str]):
+        if member is None or not member.guild_permissions.administrator:
+            return self.long_help
+        else:
+            return self.long_help + "\n" + self.admin_long_help
+
+    # saves/updates all the info in a class
     def save_assignments(self, guild_id):
         self.assignments_path.parent.mkdir(parents=True, exist_ok=True)
+        # goes through all the commands across all servers
         for i in self.commands:
             print(i.name)
+            # if a command associated guild_id mathes that of the guild_id passed into the function
             if i.guild_id == guild_id:
+                # update he JSON file for the guild_id dictionary with the class_info of the command
                 self.assignments_dict[guild_id][i.name] = i.class_info
+        # open the JSON file as a file in write mode
         with self.assignments_path.open("w") as file:
+            # dump all changes made to the JSON file i.e self.assignments_dict, into the JSON file
             json.dump(self.assignments_dict, file, indent=3)
 
 
@@ -677,27 +985,37 @@ class addClass(Bot_Command):
         self.commands.append(new_assignment)
         bot_commands.add_command(new_assignment, guild_id)
 
-    def create_class(self, class_name, professor, website, guild_id):
+    def create_class(self, class_name, professor, website, course_title, guild_id):
+        # sets the class info for the class that's being added
         class_info = {
             "assignments": {},
             "professor": professor,
-            "website": website
+            "website": website,
+            "course_title": course_title
         }
+        # add the class to list of commands to make it a useable command
         self.add_Class(class_name, class_info, guild_id)
+        # save the class and it's info to the JSON file
         self.save_assignments(guild_id)
 
     def can_run(self, location, member):
         return member is not None and member.guild_permissions.administrator
 
+    # adding a class to use as a command
     async def run(self, msg: discord.Message, args: str):
+        # get the guild_id of where the message came from
+        guild_id = str(msg.guild.id)
+        # class add 211, 212, 213
         if args.casefold().startswith("add "):
-            guild_id = str(msg.guild.id)
             if guild_id not in self.assignments_dict:
                 self.assignments_dict[guild_id] = {}
             split_args = args.split(" ", 1)
             """ split_args[0] = add
                 split_args[1:] = class_name(s) """
-            class_list = re.split(r"[,，\s]\s*", split_args[1])
+            # get a list of the class names
+            class_list = split_args_helper(split_args[1], True)
+            # run through the list to check for invalid class numbers 
+            # i.e class number isn't a digit (includes characters or spaces) or if the class number is too big (in the billions)
             for class_name in class_list:
                 if not class_name.isdigit():
                     await msg.channel.send(f"Error: **{class_name}** is not a class number! Please enter the class number of the class you are trying to add")
@@ -705,40 +1023,45 @@ class addClass(Bot_Command):
                 elif len(class_name) > 10:
                     await msg.channel.send("Error: Assignment number can't be more than 10 digits!")
                     return
-            does_class_exist = False
-            for class_name in self.commands:
-                if class_name.name in class_list and class_name.name in self.assignments_dict[guild_id]:
-                    does_class_exist = True
+            # if a class already exists remove it from the class_list list
+            for class_name in class_list.copy():
+                if class_name in self.assignments_dict[guild_id]:
                     await msg.channel.send(f"Error: The class command **{class_name}** has already been added to the bot. Type **${class_name}** to see how to use it.")
-                    class_list.remove(class_name.name)
-            if does_class_exist and len(class_list) != 0: 
+                    class_list.remove(class_name)
+            # if class_list still has classes in it to add, ask user if they want to add the remaining classes
+            if len(class_list) != 0: 
                 await msg.channel.send("Do you still want to add the other classes that were not yet added to the server?")
                 yes_or_no = ["Yes", "No"]
                 response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
                 if response == "No" or response == None:
                     await msg.channel.send("No classes were added.")
                     return
+            # loop through each class in class_list and ask user to fill in info about the class to later add to the JSON file
             for class_name in class_list:
                 await msg.channel.send(f"Please enter the professor's name for the **{class_name}** class:")
                 professor = await wait_for_reply(msg.author, msg.channel)
                 if professor == None:
                     return
-                await msg.channel.send(f"Please enter the professor's website for the **{class_name}** class:")
+                await msg.channel.send(f"Please enter {professor.content}'s website for the **{class_name}** class:")
                 website = await link_check(await wait_for_reply(msg.author, msg.channel), msg)
                 if website == "stop" or website == None:
                     return
-                self.create_class(class_name, professor, website, guild_id)
+                await msg.channel.send(f"Please enter the course title for the **{class_name}** class:")
+                course_title = await wait_for_reply(msg.author, msg.channel)
+                if course_title == None:
+                    return
+                #website doesn't need a .content becuase link_check() deals with that
+                self.create_class(class_name, professor.content, website, course_title.content, guild_id)
                 await msg.channel.send(f"You have successfully added the **{class_name}** class!\nTo add assignments to this class, type **${class_name} add [assignment_number]** or do **$help {class_name}** to see an example of how to add an assignment.")
             return
         elif args.casefold() == "list":
-            guild_id = str(msg.guild.id)
             # for loop lambda function that sorts assignments_dict in order (this is done incase assignments weren't added in order)
             # ex: added in order: 1, 2, 3, 5, 4, 9, 8, 7 ------> displays in order: 1, 2, 3, 4, 5, 6, 7, 8, 9
             # only works numerically, not with any other characters (i.e: A, a, $, -, +) | Note* converts number char into type int
             class_list = ""
             for class_num in sorted(self.assignments_dict[guild_id], key=lambda num: int(num)):
                 # adds sorted numbers to a list
-                class_list += f"**{class_num}** - [{self.assignments_dict[guild_id][class_num]['professor']}]({self.assignments_dict[guild_id][class_num]['website']})\n\n"
+                class_list += f"**{class_num}** - {self.assignments_dict[guild_id][class_num]['course_title']}\n[{self.assignments_dict[guild_id][class_num]['professor']}]({self.assignments_dict[guild_id][class_num]['website']})\n\n"
             # if there are no assignments for that class (i.e nothing in class_list), send a message
             if len(class_list) == 0:
                 await msg.channel.send(
@@ -753,30 +1076,85 @@ class addClass(Bot_Command):
                 name=f"Existing Classes", value=f"{class_list}"
             )
             await msg.channel.send(embed=classes_embed)
+        # class delete 211, 212, 213
         elif args.casefold().startswith("delete "):
-            guild_id = str(msg.guild.id)
             split_args = args.split(" ", 1)
             """ split_args[0] = delete
                 split_args[1] = classes to delete """
-            class_list = re.split(r"[,，\s]\s*", split_args[1])
+            # get a list of classes to delete
+            class_list = split_args_helper(split_args[1], True)
+            # if a class doesn't exist, let the user know, otherwise confirm with the user if they want to delete the class
             for class_num in class_list:
                 if class_num not in self.assignments_dict[guild_id]:
                     await msg.channel.send(f"**{class_num}** has not been added to the list of classes.")
                 else:
-                    await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE THE CLASS__**   **{class_num}**   **__THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
+                    await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE THE CLASS__   {class_num}   __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
                     yes_or_no = ["Yes", "No"]
                     response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
-                    if response == "No" or response == None:
-                        await msg.channel.send("No classes were deleted.")
-                    else:
-                        for index, i in enumerate(self.commands):
+                    if response == "Yes":
+                        # deleting the class_num command from JSON file, self.commands list, and bot_commands. Then saving the JSON file
+                        for i in self.commands:
                             if i.name == class_num:
                                 del self.assignments_dict[guild_id][i.name]
-                                del self.commands[index]
+                                self.commands.remove(i)
                                 bot_commands.remove_command(i, guild_id)
                                 self.save_assignments(guild_id)
                                 break
                         await msg.channel.send(f"**{class_num}** was deleted from the list of classes. You will no longer be able to view or edit it!")
+                    else:
+                        # otherwise, do nothing
+                        await msg.channel.send("No classes were deleted.")
             return
-
+        # to view all pending links for specified classes
+        # $class pending 211, 212, 213
+        elif args.casefold().startswith("pending "):
+            split_args = args.split(" ", 1)
+            """ split_args[0] = pending
+                split_args[1] = class numbers """
+            # get a list of specified classes
+            class_list = split_args_helper(split_args[1], True)
+            for class_name in class_list.copy():
+                #if the class does not exist in the JSON file, remove it from the class_list list
+                if class_name not in self.assignments_dict[guild_id]:
+                    await msg.channel.send(f"**{class_name}** is not an added class.")
+                    class_list.remove(class_name)
+            # if the class does exist but has no pending links
+            for class_name in class_list.copy():
+                assignments = self.assignments_dict[guild_id][class_name]["assignments"]
+                does_exist = False
+                for assignment in assignments:
+                    # if there is a pending link, set does_exist = True, otherwise set it to False to get rid of the class from class_list
+                    if assignments[assignment]["requested_urls"]:
+                        does_exist = True
+                if does_exist == False:
+                    await msg.channel.send(f"There are no pending links in the **{class_name}** class")
+                    class_list.remove(class_name)
+                does_exist = False
+            # if after all of these checks, there are no classes in class_list, return
+            if not class_list:
+                return
+            # though the name is pending_list, it is not a list but will act lile one when viewed in discord
+            pending_list = ""
+            # for loop goes through each class in class_list to access the requested_urls of the assignments in it
+            for class_name in sorted(class_list, key=lambda x: int(x)):
+                assignments = self.assignments_dict[guild_id][class_name]["assignments"]
+                url = 0
+                # sort the assignments numerically to display assignments in order
+                for assignment in sorted(assignments):
+                    #if there is a requested url in the assignment, add the assignment name and requested_urls in it
+                    if assignments[assignment]["requested_urls"]:
+                        pending_list += f"**Assignment {assignment}**\n"
+                    for link in assignments[assignment]["requested_urls"]:
+                        url += 1
+                        pending_list += f"[{link['title']}]({link['url']})\n"
+                # send the requested_urls as an embed message for the class
+                pending_links = discord.Embed(
+                    title=f"{class_name} Pending Links",
+                    description=pending_list,
+                    color=no_duplicate_random_color.get_color(),
+                )
+                await msg.channel.send(embed=pending_links)
+                # reset the pending list for the next class's requested_urls list
+                pending_list = ""
+            return
 bot_commands.add_command(addClass())
