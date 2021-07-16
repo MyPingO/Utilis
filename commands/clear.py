@@ -7,6 +7,8 @@ import discord
 class Clear_Command(Bot_Command):
     name = "clear"
 
+    aliases = ["c"]
+
     short_help = "Deletes messages from chat"
 
     long_help = """Clears specified number of messages from the channel

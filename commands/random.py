@@ -8,6 +8,8 @@ import re
 class Random_Command(Bot_Command):
     name = "random"
 
+    aliases = ["rand"]
+
     short_help = "Sends a random number in range."
 
     long_help = """Sends a random number in the specified range.

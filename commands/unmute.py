@@ -1,9 +1,11 @@
 from cmd import Bot_Command, bot_commands
 from utils import get_member, format_max_utf16_len_string
 from pathlib import Path
+from typing import Optional, Union
 
 import discord
 import json
+import datetime
 
 class Unmute_Command(Bot_Command):
     name = "unmute"
@@ -26,77 +28,147 @@ class Unmute_Command(Bot_Command):
     async def run(self, msg: discord.Message, args: str):
         #checks that user entered arguments for the command
         if args:
-            #current server
-            guild = msg.author.guild
-
             #for server unmutes
             if args.lower() == "all":
-                try:
-                    for mem in guild.members:
-                        #remove the mute role from the member and remove them from the log file
-                        await self.unmute(mem, msg.channel)
-                    print("Unmuted all members")
-                    await msg.channel.send("Unmuted all members")
-                except Exception as e:
-                    print(e)
-                    print("There was an error unmuting all members")
-                    await msg.channel.send("Could not unmute all members")
-                return
-
-            #get the member to be unmuted
-            member = await get_member(msg.channel, args, responder=msg.author)
-
-            #if member is muted
-            if await self.unmute(member, msg.channel):
-                print(f"User @{member} was unmuted")
-                await msg.channel.send(
-                    format_max_utf16_len_string(
-                        "User **{}** was unmuted",
-                        member.mention
-                    )
-                )
+                #server unmute
+                await self.unmute(None, msg.channel, msg.author, True)
+            else:
+                #try to unmute the member
+                await self.unmute(args, msg.channel, msg.author)
 
         #if user didnt enter any arguments
         else:
             print("Please specify a user.")
-            await msg.channel.send("Please specify a user.")
+            embed = discord.Embed(
+                title="[INPUT ERROR]",
+                color=discord.Color.orange(),
+                description="**A user was not specified**"
+            )
+            await msg.channel.send(embed=embed)
 
 
 
 
 
     #unmutes the passed member and removes them from the log file
-    async def unmute(self, member: discord.Member, channel: discord.channel.TextChannel) -> bool:
-        #verify member exists
-        if member is None:
-            print(f"User could not be found")
-            await channel.send(
-                format_max_utf16_len_string("**User could not be found**")
-            )
-            return False
+    async def unmute(
+            self,
+            m: Optional[Union[discord.Member, str]],
+            channel: discord.channel.TextChannel,
+            author: discord.Member,
+            server_unmute: bool = False
+        ):
+        """
+        Parameters
+        ------------
 
+        m: Optional[Union[discord.Member, str]]
+        The member to be unmuted.
+        Required if server_unmute is `False`, otherwise should be `None`.
+
+        channel: discord.channel.TextChannel
+        The channel to send the unmute information to.
+
+        author: discord.Member
+        The moderator responsible for the unmute.
+
+        server_unmute: bool
+        Specifies whether or not to unmute all members in the server.
+        Default value is False
+        """
+
+        #initialize the embed containing the unmute information
+        embed = discord.Embed()
+        #set the footer to the moderator responsible for the unmute
+        embed.set_footer(text=f"By: {author} | {datetime.date.today().strftime('%m/%d/%Y')}")
         #get the mute role from this guild
-        mute = discord.utils.get(member.guild.roles, name="mute")
+        mute = discord.utils.get(channel.guild.roles, name="mute")
 
-        #if user isn't muted
-        if mute not in member.roles:
-            print(f"User @{member} is not muted")
-            await channel.send(
-                format_max_utf16_len_string(
-                    "User **{}** is not muted",
-                    member
-                )
-            )
-            return False
-
-        #unmute the member
-        await member.remove_roles(mute)
         with self.mute_log.open("r") as file:
             log = json.load(file)
-        with self.mute_log.open("w") as file:
-            log[str(member.guild.id)].pop(str(member.id))
-            json.dump(log, file, indent=4)
-        return True
+
+        #check if server-wide unmute
+        if server_unmute:
+            #unmute all muted members
+            try:
+                #loop through muted members
+                for mem in mute.members:
+                    #skip any members that have been muted outside of the server mute
+                    if str(mem.id) in log[str(author.guild.id)]:
+                        continue
+                    #remove the mute role
+                    await mem.remove_roles(mute)
+                #remove the server mute from the log file
+                log[str(author.guild.id)].pop('server')
+            except KeyError as ke:
+                print(f"KeyError: {ke}")
+                return
+            except Exception as e:
+                print(f"Error with server unmute\nException: {e}")
+                embed.color = discord.Color.red()
+                embed.set_author(
+                    name="[ERROR] Server Unmute Failed",
+                    icon_url=author.avatar_url_as(format='png')
+                )
+                await channel.send(embed=embed)
+                return
+            with self.mute_log.open("w") as file:
+                json.dump(log, file, indent=4)
+            print(f"Server unmute in [#{channel.guild.id}: {channel.guild.name}]")
+            embed.color = discord.Color.green()
+            embed.description = "**UNMUTED ALL MEMBERS**"
+            embed.set_author(
+                name=f"[SERVER UNMUTE]",
+                icon_url=author.avatar_url_as(format='png')
+            )
+            await channel.send(embed=embed)
+        #try to unmute the member
+        else:
+            #if m is a string try to get the Member object
+            if isinstance(m, str):
+                if await get_member(channel, m, responder=author) is None:
+                    print(f"{m} could not be found")
+                    embed.title = f"[{m}] Not Found"
+                    embed.color = discord.Color.blue()
+                    await channel.send(embed=embed)
+                    return
+                else:
+                    m = await get_member(channel, m, responder=author)
+
+            #if member isn't muted
+            if mute not in m.roles:
+                print(f"User @{m} is not muted")
+                embed.set_author(
+                    name=f"[UNMUTE] {m}",
+                    icon_url=m.avatar_url_as(format='png')
+                )
+                embed.description = f"{m.mention}  is not muted"
+                embed.color = discord.Color.blue()
+                await channel.send(embed=embed)
+            #unmute the member
+            else:
+                try:
+                    #remove the member from the log file
+                    log[str(m.guild.id)].pop(str(m.id))
+                    with self.mute_log.open("w") as file:
+                        json.dump(log, file, indent=4)
+                    await m.remove_roles(mute)
+                except KeyError as ke:
+                    print(f"KeyError: {ke}")
+                    #error if member is not logged to be muted
+                    embed.color = discord.Color.red()
+                    embed.set_author(
+                        name=f"[ERROR] {m} Is Not Muted",
+                        icon_url=m.avatar_url_as(format='png')
+                    )
+                    await channel.send(embed=embed)
+                    return
+                embed.set_author(
+                    name=f"[UNMUTE] {m}",
+                    icon_url=m.avatar_url_as(format='png')
+                )
+                embed.color = discord.Color.green()
+                await channel.send(m.mention, embed=embed)
 
 
 unmute = Unmute_Command()
