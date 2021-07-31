@@ -8,7 +8,7 @@ from typing import Union, Optional
 
 
 # A Union of different types that can be used to represent a guild
-Guild = Union[discord.Guild, str, int]
+GuildRepr = Union[discord.Guild, str, int]
 
 
 class Bot_Command:
@@ -62,20 +62,20 @@ class Bot_Command:
 
     def can_run(
         self,
-        location: Optional[Union[discord.TextChannel, discord.Guild]],
-        member: Optional[discord.Member],
+        location: Optional[Union[discord.abc.Messageable, discord.Guild]],
+        user: Optional[Union[discord.User, discord.Member]],
     ) -> bool:
-        """Returns whether or not `member` has permission to run this command
+        """Returns whether or not `user` has permission to run this command
         in `location`.
 
         Attributes
         ------------
-        location: Optional[Union[discord.TextChannel, discord.Guild]]
+        location: Optional[Union[discord.abc.Messageable, discord.Guild]],
         Where the command is being run. Can be a channel or guild, or `None`
         to represent the 'default' location.
 
-        member: Optional[discord.Member]
-        The member that is being checked to see if they can run the command.
+        user: Optional[Union[discord.User, discord.Member]],
+        The user that is being checked to see if they can run the command.
         Can be `None` to represent the 'default' permission for most users.
         """
         return True
@@ -121,13 +121,13 @@ class Bot_Commands:
     _unique_global_commands: dict[str, Bot_Command] = {}
     _unique_guild_commands: dict[int, dict[str, Bot_Command]] = {}
 
-    def _get_guild_id(self, guild: Guild) -> int:
+    def _get_guild_id(self, guild: GuildRepr) -> int:
         if isinstance(guild, discord.Guild):
             return guild.id
         else:
             return int(guild)
 
-    def _get_guild(self, guild: Optional[Guild]) -> Optional[discord.Guild]:
+    def _get_guild(self, guild: Optional[GuildRepr]) -> Optional[discord.Guild]:
         if guild is not None:
             if isinstance(guild, discord.Guild):
                 return guild
@@ -163,7 +163,9 @@ class Bot_Commands:
 
         c = import_module(module_name)
 
-    def add_command(self, command: Bot_Command, guild: Optional[Guild] = None) -> None:
+    def add_command(
+        self, command: Bot_Command, guild: Optional[GuildRepr] = None
+    ) -> None:
         """Adds a command to the list of the bot's commands. If `guild` is
         `None` then `command` will be a global command that can be accessed
         from any guild. If `guild` is a `Guild`, then `command` will be local
@@ -221,7 +223,7 @@ class Bot_Commands:
             commands[alias.casefold()] = command
 
     def remove_command(
-        self, command: Union[Bot_Command, str], guild: Optional[Guild] = None
+        self, command: Union[Bot_Command, str], guild: Optional[GuildRepr] = None
     ) -> None:
         """Removes a `command` from a `guild`, or tries to remove `command`
         globally if `guild` is `None`.
@@ -264,7 +266,7 @@ class Bot_Commands:
                 del self._guild_commands[g.id][alias]
 
     def get_commands_in(
-        self, guild: Optional[Guild] = None, include_global_commands: bool = True
+        self, guild: Optional[GuildRepr] = None, include_global_commands: bool = True
     ) -> list[Bot_Command]:
         """Returns a list of all commands that can be used in `guild`. If
         `guild` is `None`, only global commands are returned.
@@ -277,8 +279,11 @@ class Bot_Commands:
             else:
                 return []
 
-        g_id = self._get_guild_id(guild)
-        if g_id in self._unique_guild_commands:
+        if guild is not None:
+            g_id = self._get_guild_id(guild)
+        else:
+            g_id = None
+        if g_id is not None and g_id in self._unique_guild_commands:
             if include_global_commands:
                 return [
                     *self._unique_global_commands.values(),
@@ -344,12 +349,12 @@ class Bot_Commands:
             ]
 
     def get_command(
-        self, command: str, guild: Optional[Guild]
+        self, command: str, guild: Optional[GuildRepr]
     ) -> Optional[Bot_Command]:
         """Gets a `Bot_Command` with the name or alias `command`. If `guild`
         is `None`, `get_command` only checks global commands for a command
-        named `command`. If `guild` is a `Guild`, then `get_command` also
-        searches in the local commands for that `Guild`.
+        named `command`. If `guild` represents a guild, then `get_command`
+        also searches in the local commands for that guild.
 
         Returns `None` if no command was found.
         """
@@ -367,8 +372,8 @@ class Bot_Commands:
     def can_run(
         self,
         command: Union[Bot_Command, str],
-        location: Optional[Union[discord.TextChannel, discord.Guild]],
-        member: Optional[discord.Member],
+        location: Optional[Union[discord.abc.Messageable, discord.Guild]],
+        member: Optional[Union[discord.User, discord.Member]],
     ) -> bool:
         """A wrapper function that calls a command's `can_run` method and
         returns `False` if an exception was thrown.
@@ -376,7 +381,12 @@ class Bot_Commands:
         try:
             cmd: Optional[Bot_Command]
             if not isinstance(command, Bot_Command):
-                cmd = self.get_command(command, self._get_guild(location))
+                if isinstance(location, discord.Guild):
+                    cmd = self.get_command(command, location)
+                elif isinstance(location, discord.TextChannel):
+                    cmd = self.get_command(command, location.guild)
+                else:
+                    cmd = self.get_command(command, None)
             else:
                 cmd = command
             if cmd is None:
