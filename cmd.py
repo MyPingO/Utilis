@@ -42,7 +42,7 @@ class Bot_Command:
     aliases: list[str] = []
 
     def get_help(
-        self, member: Optional[discord.Member], args: Optional[str]
+        self, user: Optional[Union[discord.User, discord.Member]], args: Optional[str]
     ) -> Union[str, discord.Embed]:
         """Gives a detailed explanation of the command for use with the help
         command. Returns either a string explaining a command or an instance
@@ -50,9 +50,9 @@ class Bot_Command:
 
         Attributes
         ------------
-        member: Optional[discord.Member]
-        A member to show help for or `None`. Can be used to show different help
-        messages for members with different permissions.
+        user: Optional[Union[discord.User, discord.Member]]
+        A user to show help for or `None`. Can be used to show different help
+        messages for users with different permissions.
 
         args: Optional[str]
         Arguments for the help command. Can be used to provide help for

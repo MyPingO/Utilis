@@ -78,27 +78,27 @@ class Help_Command(Bot_Command):
     async def get_command_info(
         self,
         command: Union[Bot_Command, str],
-        channel: discord.TextChannel,
-        member: Optional[discord.Member] = None,
+        channel: discord.abc.Messageable,
+        user: Optional[Union[discord.User, discord.Member]] = None,
         args: Optional[str] = None,
-    ):
+    ) -> None:
         """Sends a help message to `channel` for a specified `command`.
 
         Parameters
         ------------
         command: Union[Bot_Command, str]
         A command or the name of a command to display help for. If an invalid
-        command name or a command that `member` does not have permission to run
+        command name or a command that `user` does not have permission to run
         in `channel` is passed, an error message will be sent.
 
-        channel: discord.TextChannel
+        channel: discord.abc.Messageable
         The channel to send the help message to. The bot also makes sure that
-        `member` has permission to run `command` in `channel`.
+        `user` has permission to run `command` in `channel`.
 
-        member: Optional[discord.Member]
-        The member to get help for. Can be `None` to represent a 'default'
-        member. `member` is passed to `command`'s `get_help` method, and also
-        is used to check if `member` has permission to run `command` in
+        user: Optional[Union[discord.User, discord.Member]]
+        The user to get help for. Can be `None` to represent a 'default' user
+        `user` is passed to `command`'s `get_help` method, and also
+        is used to check if `user` has permission to run `command` in
         `channel`.
 
         args: Optional[str]
@@ -108,7 +108,10 @@ class Help_Command(Bot_Command):
         # If the name of a command was passed, try to find a command with that
         # name or alias
         if isinstance(command, str):
-            cmd = bot_commands.get_command(command, channel.guild)
+            if isinstance(channel, discord.TextChannel):
+                cmd = bot_commands.get_command(command, channel.guild)
+            else:
+                cmd = bot_commands.get_command(command, None)
         else:
             cmd = command
 
@@ -120,8 +123,8 @@ class Help_Command(Bot_Command):
             await channel.send(error_message, delete_after=7)
             return
 
-        # Make sure the member can run the command
-        if not cmd.can_run(channel, member):
+        # Make sure the user can run the command
+        if not cmd.can_run(channel, user):
             error_message = format_max_utf16_len_string(
                 "You do not have permission to run `{}` here.", cmd.name
             )
@@ -133,7 +136,7 @@ class Help_Command(Bot_Command):
             args = args.strip()
 
         # Get help info about the command to display
-        cmd_help = cmd.get_help(member, args)
+        cmd_help = cmd.get_help(user, args)
 
         # If the command returned its own custom help embed, send it
         if isinstance(cmd_help, discord.Embed):
