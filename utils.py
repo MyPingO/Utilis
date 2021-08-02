@@ -9,6 +9,15 @@ from typing import Callable, Iterable, Union, Optional, Sequence, TypeVar
 T = TypeVar("T")
 
 
+re_channel_mention = re.compile(r"<#(\d{18})>")
+re_user_mention = re.compile(r"<@!?(\d{18})>")
+re_role_mention = re.compile(r"<@&(\d{18})>")
+re_username_and_discriminator = re.compile(r"(.+)#(\d{4})")
+
+re_user_mention_or_id = re.compile(r"^(?:<@!?)?(\d{18})>?$")
+re_channel_mention_or_id = re.compile(r"^(?:<&)?(\d{18})>?$")
+
+
 def utf16_len(s: str) -> int:
     """Returns the UTF16 length of a string, which is the length Discord uses
     when checking if a message is too long.
@@ -29,7 +38,7 @@ def utf16_embed_len(e: discord.Embed) -> int:
         total += utf16_len(field["name"]) + utf16_len(field["value"])
 
     try:
-        footer = e._footer
+        footer = e._footer  # type: ignore
     except AttributeError:
         pass
     else:
@@ -37,7 +46,7 @@ def utf16_embed_len(e: discord.Embed) -> int:
             total += utf16_len(footer["text"])
 
     try:
-        author = e._author
+        author = e._author  # type: ignore
     except AttributeError:
         pass
     else:
@@ -276,12 +285,15 @@ async def roles(msg: discord.Message):
 
     Parameters
     -----------
-    msg: `discord.Message`
+    msg: discord.Message
     The message containing the roles the author wants to assign or remove from themself.
     Roles are separated by commas.
     Role names are preceded by a `+` or `-` to specify whether they should be
     added or removed.
     """
+
+    if not isinstance(msg.author, discord.Member):
+        raise TypeError("msg.author must be a member.")
 
     # split the message into a list of individual roles
     arr = msg.content.split(", ")
@@ -293,59 +305,64 @@ async def roles(msg: discord.Message):
         if role.startswith("+"):
             try:
                 r = discord.utils.get(msg.author.guild.roles, name=name)
-                await msg.author.add_roles(r)
+                if r is not None:
+                    await msg.author.add_roles(r)
+                    return
             except (discord.HTTPException, discord.Forbidden):
-                print(f"no role called {role[1:]}")
+                pass
+            print(f"no role called {role[1:]}")
         elif role.startswith("-"):
             try:
                 r = discord.utils.get(msg.author.guild.roles, name=name)
-                await msg.author.remove_roles(r)
+                if r is not None:
+                    await msg.author.remove_roles(r)
+                    return
             except (discord.HTTPException, discord.Forbidden):
-                print(f"{msg.author} doesn't have the role {role[1:]}")
+                pass
+            print(f"{msg.author} doesn't have the role {role[1:]}")
 
 
-_re_user_ping = re.compile(r"<@!?(\d{18})>")
-_re_user_discriminator = re.compile(r"(.+)#(\d{4})")
-
-
+# TODO: Split into get_member and get_all_members
 async def get_member(
     channel: discord.TextChannel,
     m: str,
-    responder: discord.Member = None,
+    responder: Optional[discord.Member] = None,
+    *,
     allow_multiple_matches: bool = True,
-    timeout: int = None,
-):
+    timeout: Optional[float] = None,
+) -> Optional[discord.Member]:
     """Gets a member in `channel`'s guild from the string `m`.
     If there are multiple members that match the string `m` and
     `allow_multiple_matches` is `True`, then a message will be sent asking for
     one of the matching members to be chosen in `channel`.
+    If no member is found, `None` is returned.
 
     Parameters
     -----------
-    channel: `discord.TextChannel`
+    channel: discord.TextChannel
     A channel from the guild you want to search for the member `m` in. If
     multiple members that match `m` are found and `allow_multiple_matches` is
     `True`, a message will be sent to this channel asking for one of the
     matching members to be chosen.
 
-    m: `str`
+    m: str
     The member you want to get. Can be a member mention, member id, username or
     user nickname (both case insensitive), or full username with the
     discriminator (ex. name#1234; case sensitive)
 
-    responder: `discord.Member` or `None`
+    responder: Optional[discord.Member]
     If a message asking for one of multiple members matching `m` to be chosen
     is sent to `channel` and `responder` is not `None`, only the member `responder`
     can reply with a selection. Otherwise, anyone in `channel` can select a
     member matching `m` from the list.
 
-    allow_multiple_matches: `bool`
+    allow_multiple_matches: bool
     Whether or not a message should be sent to `channel` asking for a matching
     member to be chosen in the event that multiple members matching `m` are
     found. If multiple members matching `m` are found and
     `allow_multiple_matches` is `False`, the function will return `None`.
 
-    timeout: `int` or `None`
+    timeout: Optional[float]
     If multiple matching members are found for `m` and `allow_multiple_matches`
     is `True`, `timeout` controls how long in seconds it should take for the
     message asking for a matching member to be chosen to time out and make the
@@ -359,22 +376,22 @@ async def get_member(
             return out
 
     # Try to parse `m` as a member mention
-    user_ping = _re_user_ping.fullmatch(m)
+    user_ping = re_user_mention.fullmatch(m)
     if user_ping:
         out = channel.guild.get_member(int(user_ping.group(1)))
         if out is not None:
             return out
 
     # Try to parse `m` as a full username, including the discriminator
-    user_discriminator = _re_user_discriminator.fullmatch(m)
-    if user_discriminator:
+    username_discriminator = re_username_and_discriminator.fullmatch(m)
+    if username_discriminator:
         out = channel.guild.get_member_named(m)
         if out is not None:
             return out
         for member in channel.guild.members:
-            if member.name.casefold() == user_discriminator.group(
+            if member.name.casefold() == username_discriminator.group(
                 1
-            ).casefold() and member.discriminator == user_discriminator.group(2):
+            ).casefold() and member.discriminator == username_discriminator.group(2):
                 return member
 
     # Try to find members with the username or nickname `m` (case insensitive)
@@ -421,17 +438,20 @@ async def get_member(
         )
 
 
-_re_channel_mention = re.compile(r"<#(\d{18})>")
-
-
+# FIXME: Base return typehint off of channel_types
+# TODO: Split into get_channel and get_all_channels
 async def get_channel(
     channel: discord.TextChannel,
     c: str,
-    responder: discord.Member = None,
+    responder: Optional[discord.Member] = None,
+    *,
+    channel_types: Union[
+        type[discord.abc.GuildChannel], tuple[type[discord.abc.GuildChannel], ...]
+    ] = discord.abc.GuildChannel,
     include_hidden_channels: bool = False,
     allow_multiple_matches: bool = True,
-    timeout: int = None,
-):
+    timeout: Optional[float] = None,
+) -> Optional[discord.abc.GuildChannel]:
     """Gets a channel in `channel`'s guild from the string `c`.
     If there are multiple channels that match the string `c` and
     `allow_multiple_matches` is `True`, then a message will be sent asking for
@@ -439,34 +459,41 @@ async def get_channel(
 
     Parameters
     -----------
-    channel: `discord.TextChannel`
+    channel: discord.TextChannel
     A channel from the guild you want to search for the channel `c` in. If
     multiple channels that match `c` are found and `allow_multiple_matches` is `True`, a
     message will be sent to this channel asking for one of the matching channels
     to be chosen.
 
-    c: `str`
+    c: str
     The channel you want to get. Can be a channel mention, channel id, or channel name
     (case insensitive).
 
-    responder: `discord.Member` or `None`
+    responder: Optional[discord.Member]
     If a message asking for one of multiple channels matching `c` to be chosen
     is sent to `channel` and `responder` is not `None`, only the member
     `responder` can reply with a selection. Otherwise, anyone in `channel` can
     select a channel matching `c` from the list.
 
-    include_hidden_channels: `bool`
+    channel_types: Union[
+        type[discord.abc.GuildChannel], tuple[type[discord.abc.GuildChannel], ...]
+    ]
+    The types of channels to search for. For example, to search for only text
+    and voice channels pass `(discord.TextChannel, discord.VoiceChannel)`. By
+    default includes all guild channels.
+
+    include_hidden_channels: bool
     If `responder` is not `None`, and `include_hidden_channels` is `True`, then
     only channels visible to `responder` will be checked to see if they match
     `c`.
 
-    allow_multiple_matches: `bool`
+    allow_multiple_matches: bool
     Whether or not a message should be sent to `channel` asking for a matching
     channel to be chosen in the event that multiple channels matching `c` are
     found. If multiple channels matching `c` are found and
     `allow_multiple_matches` is `False`, the function will return `None`.
 
-    timeout: `int` or `None`
+    timeout: Optional[float]
     If multiple matching channels are found for `c` and `allow_multiple_matches`
     is `True`, `timeout` controls how long in seconds it should take for the
     message asking for a matching channel to be chosen to time out and make the
@@ -474,11 +501,11 @@ async def get_channel(
     will be used.
     """
     if include_hidden_channels or responder is None:
-        include_channel = lambda channel: True
+        include_channel = lambda channel: isinstance(channel, channel_types)
     else:
         include_channel = lambda channel: channel.permissions_for(
             responder
-        ).view_channel
+        ).view_channel and isinstance(channel, channel_types)
 
     # Try to parse `c` as a channel id
     if c.isdigit():
@@ -487,7 +514,7 @@ async def get_channel(
             return out
 
     # Try to parse `c` as a channel mention
-    channel_mention = _re_channel_mention.fullmatch(c)
+    channel_mention = re_channel_mention.fullmatch(c)
     if channel_mention:
         out = channel.guild.get_channel(int(channel_mention.group(1)))
         if out is not None and include_channel(out):
@@ -532,16 +559,15 @@ async def get_channel(
         )
 
 
-_re_role_mention = re.compile(r"<@&(\d{18})>")
-
-
+# TODO: Split into get_role and get_all_roles
 async def get_role(
     channel: discord.TextChannel,
     r: str,
-    responder: discord.Member = None,
+    responder: Optional[discord.Member] = None,
+    *,
     allow_multiple_matches: bool = True,
-    timeout: int = None,
-):
+    timeout: Optional[float] = None,
+) -> Optional[discord.Role]:
     """Gets a role in `channel`'s guild from the string `r`.
     If there are multiple roles that match the string `r` and
     `allow_multiple_matches` is `True`, then a message will be sent asking for
@@ -549,29 +575,29 @@ async def get_role(
 
     Parameters
     -----------
-    channel: `discord.TextChannel`
+    channel: discord.TextChannel
     A channel from the guild you want to search for the role `r` in. If
     multiple roles that match `r` are found and `allow_multiple_matches` is
     `True`, a message will be sent to this channel asking for one of the
     matching roles to be chosen.
 
-    r: `str`
+    r: str
     The role you want to get. Can be a role mention, role id, or role name
     (case insensitive).
 
-    responder: `discord.Member` or `None`
+    responder: Optional[discord.Member
     If a message asking for one of multiple roles matching `r` to be chosen is
     sent to `channel` and `responder` is not `None`, only the member `responder`
     can reply with a selection. Otherwise, anyone in `channel` can select a
     role matching `r` from the list.
 
-    allow_multiple_matches: `bool`
+    allow_multiple_matches: bool
     Whether or not a message should be sent to `channel` asking for a matching
     role to be chosen in the event that multiple roles matching `r` are
     found. If multiple roles matching `r` are found and `allow_multiple_matches`
     is `False`, the function will return `None`.
 
-    timeout: `int` or `None`
+    timeout: Optional[float]
     If multiple matching roles are found for `r` and `allow_multiple_matches`
     is `True`, `timeout` controls how long in seconds it should take for the
     message asking for a matching role to be chosen to time out and make the
@@ -585,7 +611,7 @@ async def get_role(
             return out
 
     # Try to parse `r` as a role mention
-    role_mention = _re_role_mention.fullmatch(r)
+    role_mention = re_role_mention.fullmatch(r)
     if role_mention:
         out = channel.guild.get_role(int(role_mention.group(1)))
         if out is not None:
@@ -636,10 +662,10 @@ async def user_select_from_list(
     channel: discord.TextChannel,
     options: Sequence[T],
     option_text_generator: Callable[[T], str],
-    responder: discord.Member = None,
-    title: str = None,
-    timeout: int = 60,
-):
+    responder: Optional[discord.Member] = None,
+    title: Optional[str] = None,
+    timeout: Optional[float] = 60,
+) -> Optional[T]:
     """Sends a numbered list of options to be chosen from in a channel. If
     `responder` is not `None`, that member will then be able to choose one of
     the options provided in `options` by sending the number corresponding to
@@ -650,28 +676,28 @@ async def user_select_from_list(
 
     Parameters
     -----------
-    channel: `discord.TextChannel`
+    channel: discord.TextChannel
     The channel where the `options` will be sent to be chosen from.
 
-    options: `Sequence[T]`
+    options: Sequence[T]
     The options that will be chosen from.
 
-    option_text_generator: `Callable[[T], str]`
+    option_text_generator: Callable[[T], str]
     A function to convert an option from `options` to a string representation
     that can be sent in a message to `channel` to be chosen from by a user.
 
-    responder: `discord.Member`
+    responder: discord.Member
     If `responder` is not `None`, then `responder` will be mentioned in the
     message asking for a selection to be made from `options`, and only
     `responder` will be able to make a selection. If `responder` is `None`,
     anyone who can send messages in `channel` will be able to make a selection
     from `options`.
 
-    title: `str`
+    title: Optional[str]
     The message included at the top of the message asking for a selection to be
     made.
 
-    timeout: `int`
+    timeout: Optional[float]
     How long in seconds the function should wait for a selection from `options`
     before timing out and returning `None`.
     """
@@ -743,7 +769,7 @@ async def user_select_from_list(
 async def wait_for_reply(
     member: discord.Member,
     channel: discord.TextChannel,
-    timeout: int = 60,
+    timeout: Optional[float] = 60,
     error_message: Optional[str] = "Error: You took too long to respond",
 ) -> Optional[str]:
     """Gets the message content of the next message sent by `member` in
@@ -931,7 +957,9 @@ class Multi_Page_Embed_Message:
         embeds: list[discord.Embed],
         page_turner: Optional[Union[discord.User, discord.Member]],
         embed_editor: Optional[
-            Callable[[discord.Embed, 'Multi_Page_Embed_Message'], Optional[discord.Embed]]
+            Callable[
+                [discord.Embed, "Multi_Page_Embed_Message"], Optional[discord.Embed]
+            ]
         ] = None,
     ):
         """Takes a list of embeds to be sent as a single message that can have
@@ -964,7 +992,7 @@ class Multi_Page_Embed_Message:
     async def send(
         self,
         channel: discord.abc.Messageable,
-        page_turn_timeout: int = 180,
+        page_turn_timeout: float = 180,
         blocking: bool = False,
     ) -> None:
         """Sends the multi page embed to `channel`.
@@ -974,7 +1002,7 @@ class Multi_Page_Embed_Message:
         channel: discord.abc.Messageable
         The channel to send the multi page embed to.
 
-        page_turn_timeout: int
+        page_turn_timeout: float
         How long in seconds until the multi page embed's pages can no longer
         be cycled. Turning a page resets the timer to `page_turn_timeout`
         again.
@@ -1153,7 +1181,7 @@ class Multi_Page_Embed_Message:
             except discord.HTTPException:
                 self.msg = None
 
-    async def _wait_for_page_turn(self, page_turn_timeout: int):
+    async def _wait_for_page_turn(self, page_turn_timeout: float):
         """Handles turning the multi page embed's pages with reactions."""
 
         self.page = 0
