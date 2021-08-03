@@ -1,3 +1,4 @@
+from asyncio.windows_events import NULL
 import discord
 import shutil
 import json
@@ -8,10 +9,8 @@ from random import choice
 from pathlib import Path
 from random import choice
 from utils import user_select_from_list, wait_for_reply, format_max_utf16_len_string, split_args as split_args_helper, delete_empty_directories
-from core import client
 from typing import Optional
 
-#TODO make sure can_run or some check of admin perms is done for every command
 async def link_check(link, msg):
     if type(link) == discord.message.Message:
         link = link.content
@@ -50,12 +49,11 @@ class Random_Color:
 
 no_duplicate_random_color = Random_Color()
 
-
 class Assignment_Command(Bot_Command):
 
-    short_help = "Shows a detailed explanation of the specified assignment including relevant links, hints and solutions for the specified class."
+    short_help = "Shows a detailed explanation of the specified assignment including relevant links, hints and solutions for the specified class number."
 
-    long_help = """Specify the assignment you want help with: $[class_number] [assignment_number] Example: $211 1 **or** $212 3
+    long_help = """Specify the assignment you want help with: $[class_number] [assignment_number] Example: **$211 1** or **$212 3**
 
     **Sub-commands:**
         $[class_number] assignments
@@ -69,7 +67,7 @@ class Assignment_Command(Bot_Command):
     $[class_number] solution delete
     $[class_number] add [assignment_number]
     $[class_number] edit [assignment_number]
-    $[class-number] pending [assignment_number(s)]
+    $[class_number] pending [assignment_number(s)]
     $[class_number] removeurl [assignment_number] [title_of_link]
     $[class_number] syllabus add
     $[class_number] syllabus delete"""
@@ -173,12 +171,13 @@ class Assignment_Command(Bot_Command):
                 description=assignment["description"],
                 color=color,
             )
-            # extra embed stuff
-            description.add_field(
-                name=f"{self.class_info['professor']}'s Website",
-                value=f"Click [here]({self.class_info['website']}) to go to professor {self.class_info['professor']}'s website.",
-                inline=False,
-            )
+            if self.class_info["website"] is not None:
+                # extra embed stuff
+                description.add_field(
+                    name=f"{self.class_info['professor']}'s Website",
+                    value=f"Click [here]({self.class_info['website']}) to go to professor {self.class_info['professor']}'s website.",
+                    inline=False,
+                )
             # extra embed stuff
             description.set_footer(
                 text="If you still need help with this assignment after reading this, please don't hesitate to ask!"
@@ -389,7 +388,7 @@ class Assignment_Command(Bot_Command):
                 # get added assignment names into a list
                 assignments = []
                 for assignment_num in self.class_info["assignments"]:
-                    assignments.append(assignment_num)
+                    assignments.append("Assignment " + assignment_num)
                 await msg.channel.send("Which assignment solution do you want to add?")
                 # choose which assignment to add a solution to. If no choice is given, return
                 assignment_num = await user_select_from_list(msg.channel, assignments, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
@@ -437,6 +436,7 @@ class Assignment_Command(Bot_Command):
                     #if no attachment was given
                     elif not solution.attachments:
                         await msg.channel.send("Error: No attachments given.")
+                        delete_empty_directories(solution_directory, self.add_class.solutions_path)
                         return
                     
                     # using a for loop to go through attachments becuase mobile allows for multiple atachments per message 
@@ -446,6 +446,7 @@ class Assignment_Command(Bot_Command):
                     for attachment in solution.attachments:
                         if attachment.size == 0:
                             await msg.channel.send(f"Error: **{attachment.filename}** is an empty file! Please make sure you submit attachments that are not empty.")
+                            delete_empty_directories(solution_directory, self.add_class.solutions_path)
                             return
                     # check if a solution with the same filename already exists
                     for attachment in solution.attachments:
@@ -476,72 +477,121 @@ class Assignment_Command(Bot_Command):
                     await msg.channel.send("Enter the next file or type **Done** if you are finished.")
             # $211 solution delete
             elif solution_choice.casefold() == "delete":
-                print("Deleting solutions")
-                # get assignment numbers in a list to choose from
-                assignments = []
-                for assignment_num in self.class_info["assignments"]:
-                    assignments.append(assignment_num)
-                await msg.channel.send("Which assignment solution do you want to delete?")
-                assignment_num = await user_select_from_list(msg.channel, assignments, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
-                if assignment_num == None:
-                    return    
-                # set solution directory with their assignment choice
-                solution_directory = (self.add_class.solutions_path/self.guild_id/self.name/assignment_num)
-                # if there are no solutions to delete for the chosen assignment
-                if not solution_directory.exists() or not any(solution_directory.iterdir()):
-                    await msg.channel.send("There are no solutions added to this assignment for you to delete.")
+                if not (self.add_class.solutions_path/self.guild_id).exists():
+                    # if no solutions have been added for any class, AKA there's nothing to delete
+                    await msg.channel.send("There are no solutions to delete yet.")
                     return
-                # ask who's solution you want to delete since there can be multiple solutions sent by different people
-                # create two lists: one with user id's to search for their directory and another for that user's discord name
-                username_list = []
-                user_id_list = []
-                for user_id in solution_directory.iterdir():
-                    # discord's get_member() function to get the name of a user_id, Ex: 87954609457609458 --> EpicUsername123
-                    member = msg.guild.get_member(int(user_id.name))
-                    # add user ID's and usernames to respective lists
-                    username_list.append(str(member))
-                    user_id_list.append(user_id.name)
-                await msg.channel.send("Whose solution(s) do you want to delete?")
-                solution_author = await user_select_from_list(msg.channel, username_list, lambda x: x, msg.author, "", 30)
-                if solution_author == None:
-                    return
-                # get the corresponding user ID of the username chosen by user
-                user_id = user_id_list[username_list.index(solution_author)]
-                # set new solution directory to access chosen user's solutions
-                solution_directory = solution_directory/user_id
-                # get a list of all solution folders (names) uploaded by chosen user
-                solutions_list = []
-                for solution_folder in solution_directory.iterdir():
-                    solutions_list.append(solution_folder.name)
-                #if there is more than one solution ask user to choose which one to delete
-                if len(solutions_list) > 1:
-                    await msg.channel.send(f"**{solution_author}** has uploaded multiple solution versions for Assignment {assignment_num}. Which version do you want to delete?")
-                    solution_name = await user_select_from_list(msg.channel, solutions_list, lambda x: x, msg.author, "", 30)
-                    if solution_name == None:
+                    # if the user running the command is not an admin on the server, allow them to only delete their own solution submissions
+                if not msg.author.guild_permissions.administrator:
+                    user_solutions = []
+                    # check if the user has submitted any solutions in the server/guild
+                    for assignment_solution_folder in (self.add_class.solutions_path/self.guild_id/self.name).iterdir():
+                        solution_directory = (self.add_class.solutions_path/self.guild_id/self.name/assignment_solution_folder.name)
+                        if (solution_directory/str(msg.author.id)).exists():
+                            user_solutions.append(assignment_solution_folder.name)
+                    # if the user has not submitted a solution, AKA can't delete anything
+                    if len(user_solutions) == 0:
+                        await msg.channel.send("Error: You have not uploaded any solutions to delete! **Note** You can only delete solutions that you have submitted.")
                         return
-                    # confirm deletion with user
-                    await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE__ {solution_author}'s Solution: {solution_name} __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
-                    yes_or_no = ["Yes", "No"]
-                    response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
-                    if response == "Yes":
-                        #using shutil.rmtree() to remove directory if it is not empty as opposed to .rmdir() which can only remove empty directories/folders
-                        shutil.rmtree(solution_directory/solution_name.content)
-                        await msg.channel.send(f"**{solution_name.content}** has been removed from assignment {assignment_num}!")
+                    # if they have, ask them which of their solutions do they want to delete
                     else:
-                        await msg.channel.send(f"**{solution_name.content}** was not deleted from assignment {assignment_num}.")
-                    return
+                        await msg.channel.send(
+                            "Which assignment do you want to delete a solution from? **Note** You can only delete solutions that you have submitted."
+                        )
+                        assignment_solution_folder = await user_select_from_list(msg.channel, user_solutions, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
+                        if assignment_solution_folder == None:
+                            return
+                        await msg.channel.send("Which solution do you want to delete?")
+                        solution_directory = (self.add_class.solutions_path/self.guild_id/self.name/assignment_solution_folder/str(msg.author.id))
+                        user_solutions_list = []
+                        for solution in solution_directory.iterdir():
+                            user_solutions_list.append(solution.name)
+                        solution_choice = await user_select_from_list(msg.channel, user_solutions_list, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
+                        if solution_choice == None:
+                            return
+                        # ask user for confirmation to delete their solution
+                        await msg.channel.send(f"Delete your solution called **{solution_choice}** from **{assignment_solution_folder}**?")
+                        yes_or_no = ["Yes", "No"]
+                        response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "Yes or No?", timeout=30)
+                        if response == None:
+                            return
+                        elif response == "Yes":
+                            #using shutil.rmtree() to remove directory if it is not empty as opposed to .rmdir() which can only remove empty directories/folders
+                            shutil.rmtree(solution_directory/solution_choice)
+                            await msg.channel.send(f"**{solution_choice}** has been removed from **{assignment_solution_folder}**!")
+                            delete_empty_directories(solution_directory, self.add_class.solutions_path)
+                            return
+                        else:
+                            await msg.channel.send("No changed were made.")
+                            return
                 else:
-                    #if there's only one solution added by the solution author
-                    solution_name = solutions_list[0]
-                    await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE__ {solution_author}'s Solution: {solution_name} __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
-                    yes_or_no = ["Yes", "No"]
-                    response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
-                    if response == "Yes":
-                        shutil.rmtree(solution_directory)
-                        await msg.channel.send(f"**{solution_author}'s** solution has been removed from Assignment {assignment_num}!")
+                    # get assignment numbers in a list to choose from
+                    assignments = []
+                    for assignment_num in self.class_info["assignments"]:
+                        assignments.append("Assignment " + assignment_num)
+                    await msg.channel.send("Which assignment solution do you want to delete?")
+                    assignment_num = await user_select_from_list(msg.channel, assignments, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
+                    if assignment_num == None:
+                        return    
+                    # set solution directory with their assignment choice
+                    solution_directory = (self.add_class.solutions_path/self.guild_id/self.name/assignment_num)
+                    # if there are no solutions to delete for the chosen assignment
+                    if not solution_directory.exists() or not any(solution_directory.iterdir()):
+                        await msg.channel.send("There are no solutions added to this assignment for you to delete.")
+                        return
+                    # ask who's solution you want to delete since there can be multiple solutions sent by different people
+                    # create two lists: one with user id's to search for their directory and another for that user's discord name
+                    username_list = []
+                    user_id_list = []
+                    for user_id in solution_directory.iterdir():
+                        # discord's get_member() function to get the name of a user_id, Ex: 87954609457609458 --> EpicUsername123
+                        member = msg.guild.get_member(int(user_id.name))
+                        # add user ID's and usernames to respective lists
+                        username_list.append(str(member))
+                        user_id_list.append(user_id.name)
+                    await msg.channel.send("Whose solution(s) do you want to delete?")
+                    solution_author = await user_select_from_list(msg.channel, username_list, lambda x: x, msg.author, "", 30)
+                    if solution_author == None:
+                        return
+                    # get the corresponding user ID of the username chosen by user
+                    user_id = user_id_list[username_list.index(solution_author)]
+                    # set new solution directory to access chosen user's solutions
+                    solution_directory = solution_directory/user_id
+                    # get a list of all solution folders (names) uploaded by chosen user
+                    solutions_list = []
+                    for solution_folder in solution_directory.iterdir():
+                        solutions_list.append(solution_folder.name)
+                    #if there is more than one solution ask user to choose which one to delete
+                    if len(solutions_list) > 1:
+                        await msg.channel.send(f"**{solution_author}** has uploaded multiple solution versions for Assignment {assignment_num}. Which version do you want to delete?")
+                        solution_name = await user_select_from_list(msg.channel, solutions_list, lambda x: x, msg.author, "", 30)
+                        if solution_name == None:
+                            return
+                        # confirm deletion with user
+                        await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE__ {solution_author}'s Solution: {solution_name} __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
+                        yes_or_no = ["Yes", "No"]
+                        response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                        if response == "Yes":
+                            #using shutil.rmtree() to remove directory if it is not empty as opposed to .rmdir() which can only remove empty directories/folders
+                            shutil.rmtree(solution_directory/solution_name)
+                            delete_empty_directories(solution_directory, self.add_class.solutions_path)
+                            await msg.channel.send(f"**{solution_name}** has been removed from **{assignment_num}**!")
+                        else:
+                            await msg.channel.send(f"**{solution_name}** was not deleted from **{assignment_num}**.")
+                        return
                     else:
-                        await msg.channel.send(f"**{solution_author}'s** solution was not deleted from Assignment {assignment_num}.")
-                    return
+                        #if there's only one solution added by the solution author
+                        solution_name = solutions_list[0] #TODO fix "ARE YOU SURE" messages
+                        await msg.channel.send(f"⚠️  **__ {solution_author}'s Solution: {solution_name} __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
+                        yes_or_no = ["Yes", "No"]
+                        response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                        if response == "Yes":
+                            shutil.rmtree(solution_directory)
+                            delete_empty_directories(solution_directory.parent, self.add_class.solutions_path)
+                            await msg.channel.send(f"**{solution_author}'s** solution has been removed from **{assignment_num}**!")
+                        else:
+                            await msg.channel.send(f"**{solution_author}'s** solution was not deleted from **{assignment_num}**.")
+                        return
             else:
                 print("Getting Solutions")
                 if not (self.add_class.solutions_path / self.guild_id).exists():
@@ -631,6 +681,7 @@ class Assignment_Command(Bot_Command):
             if assignment_num in self.class_info["assignments"]:
                 await msg.channel.send(format_max_utf16_len_string("Error: This assignment already exists! Type **$ {} {}** to view it.", self.name, assignment_num)
                 )
+                return
             # if it doesn't exist in the assignments list, we create it
             if assignment_num not in self.class_info["assignments"]:
                 # this is the standard layout of every assignment
@@ -789,6 +840,11 @@ class Assignment_Command(Bot_Command):
             return
         # $211 delete 1, 2, 5
         elif args.casefold().startswith("delete "):
+            if not msg.author.guild_permissions.administrator:
+                await msg.channel.send(
+                    "Error: You cannot use this command since you are not admin!"
+                )
+                return
             split_args = args.split(" ", 1)
             """ split_args[0] = delete
                 split_args[1] = assignments to delete """
@@ -998,15 +1054,17 @@ class addClass(Bot_Command):
         # save the class and it's info to the JSON file
         self.save_assignments(guild_id)
 
-    def can_run(self, location, member):
-        return member is not None and member.guild_permissions.administrator
-
     # adding a class to use as a command
     async def run(self, msg: discord.Message, args: str):
         # get the guild_id of where the message came from
         guild_id = str(msg.guild.id)
         # class add 211, 212, 213
         if args.casefold().startswith("add "):
+            if not msg.author.guild_permissions.administrator:
+                await msg.channel.send(
+                    "Error: You cannot use this command since you are not admin!"
+                )
+                return
             if guild_id not in self.assignments_dict:
                 self.assignments_dict[guild_id] = {}
             split_args = args.split(" ", 1)
@@ -1042,10 +1100,14 @@ class addClass(Bot_Command):
                 professor = await wait_for_reply(msg.author, msg.channel)
                 if professor == None:
                     return
-                await msg.channel.send(f"Please enter {professor.content}'s website for the **{class_name}** class:")
-                website = await link_check(await wait_for_reply(msg.author, msg.channel), msg)
-                if website == "stop" or website == None:
-                    return
+                await msg.channel.send(f"Please enter {professor.content}'s website for the **{class_name}** class. If the professor does not have a website, type **None**.")
+                website = await wait_for_reply(msg.author, msg.channel)
+                if website.content.casefold() == "none":
+                    website = None
+                else:
+                    website = await link_check(website, msg)
+                    if website == "stop" or website == None:
+                        return
                 await msg.channel.send(f"Please enter the course title for the **{class_name}** class:")
                 course_title = await wait_for_reply(msg.author, msg.channel)
                 if course_title == None:
@@ -1078,6 +1140,11 @@ class addClass(Bot_Command):
             await msg.channel.send(embed=classes_embed)
         # class delete 211, 212, 213
         elif args.casefold().startswith("delete "):
+            if not msg.author.guild_permissions.administrator:
+                await msg.channel.send(
+                    "Error: You cannot use this command since you are not admin!"
+                )
+                return
             split_args = args.split(" ", 1)
             """ split_args[0] = delete
                 split_args[1] = classes to delete """
@@ -1108,6 +1175,11 @@ class addClass(Bot_Command):
         # to view all pending links for specified classes
         # $class pending 211, 212, 213
         elif args.casefold().startswith("pending "):
+            if not msg.author.guild_permissions.administrator:
+                await msg.channel.send(
+                    "Error: You cannot use this command since you are not admin!"
+                )
+                return
             split_args = args.split(" ", 1)
             """ split_args[0] = pending
                 split_args[1] = class numbers """
