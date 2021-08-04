@@ -1,7 +1,7 @@
 import discord
 from typing import Union, Optional
 
-from cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands
 from utils import (
     max_len_string,
     format_max_len_string,

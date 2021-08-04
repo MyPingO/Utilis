@@ -1,10 +1,10 @@
-from cmd import Bot_Command
+from bot_cmd import Bot_Command
 import random
 import discord
 
 
 class coinF_Command(Bot_Command):
-    name = "coin_flip" 
+    name = "coin_flip"
 
     short_help = "Replies with a random coin flip (heads or tails)"
 
@@ -21,10 +21,10 @@ class coinF_Command(Bot_Command):
         else:
             print("Tails")
             await msg.channel.send("Tails")
-                
+
             """else print(f'Tails')"""
             """print(f'pong: "{single_line_args}"')"""
-        
+
 
 
 command = coinF_Command()

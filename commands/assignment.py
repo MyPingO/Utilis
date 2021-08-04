@@ -1,7 +1,7 @@
 import discord
 import shutil
 import json
-from cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands
 from main import bot_prefix
 from commands.help import help_cmd
 from random import choice
@@ -16,7 +16,7 @@ async def link_check(link, msg):
     if (link.casefold().startswith("http://") and len(link) > len("http://")) or (
         link.casefold().startswith("https://") and len(link) > len("https://")):
         return link
-    else: 
+    else:
         await msg.channel.send("Please enter a proper link. Example: http://example.com **or** https://example.com\nYou can also type **Stop** to exit the command.")
         link = await wait_for_reply(msg.author, msg.channel)
         if link.content == "stop":
@@ -230,7 +230,7 @@ class Assignment_Command(Bot_Command):
                     "Error: Title cannot be more than 100 characters"
                 )
                 return
-            
+
             # checks for duplicate urls in queue
             for requested_dict in self.class_info["assignments"][assignment_num][
                 "requested_urls"
@@ -396,7 +396,7 @@ class Assignment_Command(Bot_Command):
                 # set a directory where solutions will be stored
                 solution_directory = (self.add_class.solutions_path/self.guild_id/self.name/assignment_num/str(msg.author.id))
                 await msg.channel.send("Enter a name for your solution. Your name can only contain letters or numbers. Type **\Stop/** to stop adding a solution.")
-                # while True loop that keeps asking to correct errors if any occur i.e file name exists or ivalid file name 
+                # while True loop that keeps asking to correct errors if any occur i.e file name exists or ivalid file name
                 # unless user types "stop" in which case, return
                 while True:
                     solution_name = await wait_for_reply(msg.author, msg.channel)
@@ -418,7 +418,7 @@ class Assignment_Command(Bot_Command):
                 await msg.channel.send(f"Drag in your solution file(s) to assignment {assignment_num}. When you are finished, type **Done** to stop adding files.")
                 # keep asking for files to add to the solution folder
                 while True:
-                    # delete empty folders using delete_empty_directories() if no files given or user is done giving files. 
+                    # delete empty folders using delete_empty_directories() if no files given or user is done giving files.
                     # More info on the function in utils.py
                     solution = await wait_for_reply(msg.author, msg.channel, timeout = 15)
                     if solution == None:
@@ -437,8 +437,8 @@ class Assignment_Command(Bot_Command):
                         await msg.channel.send("Error: No attachments given.")
                         delete_empty_directories(solution_directory, self.add_class.solutions_path)
                         return
-                    
-                    # using a for loop to go through attachments becuase mobile allows for multiple atachments per message 
+
+                    # using a for loop to go through attachments becuase mobile allows for multiple atachments per message
                     # just in case a mobile user tries to add a solution
 
                     # check if the file given is an empty file i.e file size is 0bytes
@@ -531,7 +531,7 @@ class Assignment_Command(Bot_Command):
                     await msg.channel.send("Which assignment solution do you want to delete?")
                     assignment_num = await user_select_from_list(msg.channel, assignments, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
                     if assignment_num == None:
-                        return    
+                        return
                     # set solution directory with their assignment choice
                     solution_directory = (self.add_class.solutions_path/self.guild_id/self.name/assignment_num)
                     # if there are no solutions to delete for the chosen assignment
@@ -655,7 +655,7 @@ class Assignment_Command(Bot_Command):
                         for solution_file in (solution_directory/solutions_list[0]).iterdir():
                             with solution_file.open("rb") as download_file:
                                 await msg.channel.send(file=discord.File(download_file, solution_file.name))
-                return        
+                return
         # to add an assignment to a class
         # $211 add 1
         elif args.casefold().startswith("add "):
@@ -914,8 +914,8 @@ class Assignment_Command(Bot_Command):
                     return
                 # otherwise, create the directory
                 syllabus_path.mkdir(parents = True)
-                # while True loop to give user chance to retry incase of error 
-                # i.e no attachments given, more than one attachment given or attachment size is 0 bytes. 
+                # while True loop to give user chance to retry incase of error
+                # i.e no attachments given, more than one attachment given or attachment size is 0 bytes.
                 while True:
                     await msg.channel.send("Please submit the syllabus as a file or type **Stop** to exit the command")
                     syllabus = await wait_for_reply(msg.author, msg.channel)
@@ -1071,7 +1071,7 @@ class addClass(Bot_Command):
                 split_args[1:] = class_name(s) """
             # get a list of the class names
             class_list = split_args_helper(split_args[1], True)
-            # run through the list to check for invalid class numbers 
+            # run through the list to check for invalid class numbers
             # i.e class number isn't a digit (includes characters or spaces) or if the class number is too big (in the billions)
             for class_name in class_list:
                 if not class_name.isdigit():
@@ -1086,7 +1086,7 @@ class addClass(Bot_Command):
                     await msg.channel.send(f"Error: The class command **{class_name}** has already been added to the bot. Type **${class_name}** to see how to use it.")
                     class_list.remove(class_name)
             # if class_list still has classes in it to add, ask user if they want to add the remaining classes
-            if len(class_list) != 0: 
+            if len(class_list) != 0:
                 await msg.channel.send("Do you still want to add the other classes that were not yet added to the server?")
                 yes_or_no = ["Yes", "No"]
                 response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)

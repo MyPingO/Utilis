@@ -1,4 +1,4 @@
-from cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands
 
 import discord
 

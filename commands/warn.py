@@ -4,7 +4,7 @@ import json
 import random
 from commands.mute import mute
 from commands.unmute import unmute
-from cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands
 from pathlib import Path
 from datetime import datetime, time, timedelta
 from utils import get_member

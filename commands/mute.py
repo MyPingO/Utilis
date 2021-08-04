@@ -1,4 +1,4 @@
-from cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands
 from pathlib import Path
 from utils import get_member
 from commands.unmute import unmute
@@ -52,7 +52,7 @@ class Mute_Command(Bot_Command):
 
 
 
-    async def run(self, msg: discord.Message, args: str): 
+    async def run(self, msg: discord.Message, args: str):
         #gets current channel
         channel = msg.channel
         #checks that user entered arguments for the command
@@ -213,7 +213,7 @@ class Mute_Command(Bot_Command):
 
     #mutes the passed member given a datetime object
     async def mute(
-            self, 
+            self,
             m: Optional[Union[discord.Member, str]],
             unmute_at: datetime.datetime,
             channel: discord.TextChannel,
@@ -229,7 +229,7 @@ class Mute_Command(Bot_Command):
         Required if server_mute is `False`, otherwise should be 'None'.
 
         unmute_at: datetime.datetime
-        A datetime object specifying when the 
+        A datetime object specifying when the
         member or server should be unmuted.
 
         channel: discord.TextChannel
@@ -242,7 +242,7 @@ class Mute_Command(Bot_Command):
         Specifies whether or not to mute all members in the server.
         Default value is False
         """
-       
+
         #initialize the embed containing the mute information
         embed = discord.Embed()
         #the footer explains who is responsible for the mute and today's date

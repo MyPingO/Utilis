@@ -1,7 +1,7 @@
 import discord
 import json
 
-from cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands
 from discord import guild
 from utils import wait_for_reply
 from pathlib import Path

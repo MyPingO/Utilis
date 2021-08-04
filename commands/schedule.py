@@ -1,4 +1,4 @@
-from cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands
 from pathlib import Path
 from utils import get_member, get_role,  Multi_Page_Embed_Message
 from typing import Optional, Union
@@ -10,7 +10,7 @@ import asyncio
 
 class Schedule_Command(Bot_Command):
     name = "schedule"
-    
+
     session_log = Path("data/scheduled_sessions.json")
 
     short_help = "Posts the server's schedule or schedules an event."
@@ -22,7 +22,7 @@ class Schedule_Command(Bot_Command):
     `Title` Descriptive name for the event. Will also be the name of the role to be pinged
 
     If all arguments are omitted, the schedule for this server is posted.
-    All participants will be pinged by a designated role 5 minutes in advance 
+    All participants will be pinged by a designated role 5 minutes in advance
     as a reminder, as well as when the event starts.
     """
 
@@ -40,7 +40,7 @@ class Schedule_Command(Bot_Command):
     async def run(self, msg: discord.Message, args: str):
         with self.session_log.open("r") as file:
             self.sessions = json.load(file)
-        
+
         #gets current server
         guild = msg.author.guild
         #gets a string of the server's id
@@ -89,7 +89,7 @@ class Schedule_Command(Bot_Command):
                 print("The date/time was not formatted properly. Please follow the format `MM/DD/YY HH:MM AM/PM`.")
                 await channel.send("The date/time was not formatted properly. Please follow the format `MM/DD/YY HH:MM AM/PM`.")
                 return
-            
+
             #verify the user enters a future date/time
             if session < datetime.datetime.now(tz=self.tz):
                 print("This date/time has already passed. Please enter a valid date/time.")
@@ -138,7 +138,7 @@ class Schedule_Command(Bot_Command):
             #verify this event still exists
             if not await self.exists(id_num, event):
                return
-            
+
             #assign all participants the designated role for this event
             await self.react_for_role(message, role)
 
@@ -177,7 +177,7 @@ class Schedule_Command(Bot_Command):
             #removes the deleted role mention from the reminder messages
             await m1.edit(content=None)
             await m2.edit(content=None)
-                       
+
         #TODO allows admins to schedule announcements
         elif args.casefold().startswith("announcement"):
             if msg.author.guild_permissions.administrator:
@@ -213,12 +213,12 @@ class Schedule_Command(Bot_Command):
                     for item in items:
                         #delete the role assigned to this event
                         role = await get_role(channel, item["name"])
-                        if role is not None: 
+                        if role is not None:
                             await role.delete()
                         #remove the event from the log file
                         self.sessions[guild_id][year][month].remove(item)
                         self.save()
-                        
+
                         #delete the message asking for reactions to join this event
                         try:
                             m = await channel.fetch_message(item["msg_id"])
@@ -374,10 +374,10 @@ class Schedule_Command(Bot_Command):
 
     #creates and sends an embed of this guild's scheduled events
     async def post_schedule(
-            self, 
-            channel: discord.TextChannel, 
-            guild: discord.Guild, 
-            year: Optional[str] = None, 
+            self,
+            channel: discord.TextChannel,
+            guild: discord.Guild,
+            year: Optional[str] = None,
             m: Optional[Union[discord.User, discord.Member]] = None
         ):
         """

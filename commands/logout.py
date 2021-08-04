@@ -1,6 +1,6 @@
 import discord
 from core import client
-from cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands
 
 
 class Logout_Command(Bot_Command):

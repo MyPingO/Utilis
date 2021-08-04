@@ -10,7 +10,7 @@ import asyncio
 from pathlib import Path
 
 from core import client
-from cmd import bot_commands
+from bot_cmd import bot_commands
 from utils import roles, format_max_len_string
 
 bot_prefix = "!"

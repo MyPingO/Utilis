@@ -1,4 +1,4 @@
-from cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands
 from utils import get_member
 
 import discord
@@ -10,7 +10,7 @@ class Image_Command(Bot_Command):
 
     short_help = "Sends a profile picture or custom emoji."
 
-    long_help = """Sends the profile picture of a specified user or the image of a custom 
+    long_help = """Sends the profile picture of a specified user or the image of a custom
     emoji in this guild. If no user is specified, sends the message author's profile picture.
     Arguments:
     `User or Emoji` (optional)
@@ -66,7 +66,7 @@ class Image_Command(Bot_Command):
                 embed = discord.Embed(title=f"**{emoji.group('name')}**", color=discord.Color.blue())
                 embed.set_image(url=image)
                 await channel.send(embed=embed)
-                return 
+                return
         embed = discord.Embed(title=f"[{item}] Not Found", color=discord.Color.blue())
         await channel.send(embed=embed)
 
