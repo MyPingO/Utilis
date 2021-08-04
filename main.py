@@ -11,7 +11,7 @@ from pathlib import Path
 
 from core import client
 from cmd import bot_commands
-from utils import roles, format_max_utf16_len_string
+from utils import roles, format_max_len_string
 
 bot_prefix = "!"
 
@@ -96,7 +96,7 @@ async def on_message(msg: discord.Message):
                     else:
                         # If the command exists but the member can not run it, send
                         # an error message
-                        error_message = format_max_utf16_len_string(
+                        error_message = format_max_len_string(
                             "You do not have permission to run `{}` here.", cmd_name
                         )
                         await msg.channel.send(
@@ -105,9 +105,7 @@ async def on_message(msg: discord.Message):
                         )
                 else:
                     # If the command does not exist, send an error message
-                    error_message = format_max_utf16_len_string(
-                        "No command `{}`", cmd_name
-                    )
+                    error_message = format_max_len_string("No command `{}`", cmd_name)
                     await msg.channel.send(
                         error_message,
                         delete_after=7,

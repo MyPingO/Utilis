@@ -1,5 +1,5 @@
 from cmd import Bot_Command, bot_commands
-from utils import get_member, format_max_utf16_len_string
+from utils import get_member
 from pathlib import Path
 from typing import Optional, Union
 

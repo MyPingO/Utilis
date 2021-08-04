@@ -1,5 +1,5 @@
 from core import client
-from utils import format_max_utf16_len_string
+from utils import format_max_len_string
 
 import discord
 from pathlib import Path
@@ -408,7 +408,7 @@ class Bot_Commands:
         except Exception as e:
             if not client.is_closed():
                 try:
-                    error_message = format_max_utf16_len_string(
+                    error_message = format_max_len_string(
                         "Error executing `{}`", command
                     )
                     await msg.channel.send(error_message, delete_after=7)

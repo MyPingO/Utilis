@@ -18,46 +18,8 @@ re_user_mention_or_id = re.compile(r"^(?:<@!?)?(\d{18})>?$")
 re_channel_mention_or_id = re.compile(r"^(?:<&)?(\d{18})>?$")
 
 
-def utf16_len(s: str) -> int:
-    """Returns the UTF16 length of a string, which is the length Discord uses
-    when checking if a message is too long.
-    """
-    return len(s.encode("utf_16_le", "replace")) // 2
-
-
-def utf16_embed_len(e: discord.Embed) -> int:
-    """Returns the UTF16 length of an embed, which is the length Discord uses
-    when checking if a message is too long.
-    """
-    total = 0
-    if isinstance(e.title, str):
-        total += utf16_len(e.title)
-    if isinstance(e.description, str):
-        total += utf16_len(e.description)
-    for field in getattr(e, "_fields", []):
-        total += utf16_len(field["name"]) + utf16_len(field["value"])
-
-    try:
-        footer = e._footer  # type: ignore
-    except AttributeError:
-        pass
-    else:
-        if isinstance(footer["text"], str):
-            total += utf16_len(footer["text"])
-
-    try:
-        author = e._author  # type: ignore
-    except AttributeError:
-        pass
-    else:
-        if isinstance(author["name"], str):
-            total += utf16_len(author["name"])
-
-    return total
-
-
-def max_utf16_len_string(s: str, maxlen: int, add_ellipsis: bool = True) -> str:
-    """Shortens a string to a maximum UTF16 length if it is too long.
+def max_len_string(s: str, maxlen: int, add_ellipsis: bool = True) -> str:
+    """Shortens a string to a maximum length if it is too long.
 
     Parameters
     -----------
@@ -65,58 +27,26 @@ def max_utf16_len_string(s: str, maxlen: int, add_ellipsis: bool = True) -> str:
     The string to shorten.
 
     maxlen: int
-    The maximum UTF16 length for the string being shortened.
+    The maximum length for the string being shortened.
 
     add_ellipsis: bool
     Whether or not '...' should be added to the end of the string if it is
     shortened. The ellipses are included when calculating the max length.
     """
-    # Common simple cases for the function
-    if maxlen <= 0:
-        return ""
-    if utf16_len(s) <= maxlen:
+    if len(s) <= maxlen:
         return s
-    if add_ellipsis:
+    elif add_ellipsis:
         if maxlen <= 3:
             return "." * maxlen
-
-    # Tries to naively slice the string assuming that all characters within
-    # maxlen have a UTF16 length of 1
-    if add_ellipsis:
-        naive_short = f"{s[:maxlen-3]}..."
-    else:
-        naive_short = s[:maxlen]
-    naive_len = utf16_len(naive_short)
-    if naive_len == maxlen:
-        return naive_short
-    # If the naive slice does not give the exact max length, use a right
-    # bisection to find a point to the right of where the slice should occur.
-    if naive_len < maxlen:
-        low = naive_len
-        high = len(s)
-    else:
-        low = 0
-        high = naive_len
-    while low < high:
-        mid = (low + high) // 2
-        if utf16_len(s[:mid]) <= maxlen:
-            low = mid + 1
         else:
-            high = mid
-
-    # Move where the slice should occur to the left as little as possible
-    # while still being within maxlen.
-    if add_ellipsis:
-        while utf16_len(s[:low]) > maxlen - 3:
-            low -= 1
-        return f"{s[:low]}..."
+            return f"{s[:maxlen-3]}..."
     else:
-        while utf16_len(s[:low]) > maxlen:
-            low -= 1
-        return s[:low]
+        return s[:maxlen]
 
 
-def format_max_utf16_len_string(
+# TODO: Optimize algorithm
+# TODO: Add kwargs support
+def format_max_len_string(
     fstring: str,
     *args,
     max_total_len: Optional[int] = 2000,
@@ -129,7 +59,7 @@ def format_max_utf16_len_string(
     Examples
     -----------
     .. code-block:: python3
-        format_max_utf16_len_string(
+        format_max_len_string(
             "AB {} CD {}",
             "123",
             456,
@@ -137,14 +67,14 @@ def format_max_utf16_len_string(
         ) == "AB 123 CD 456"
 
     .. code-block:: python3
-        format_max_utf16_len_string(
+        format_max_len_string(
             "AB {} CD",
             123456789
             max_total_len=12
         ) == "AB 123... CD"
 
     .. code-block:: python3
-        format_max_utf16_len_string(
+        format_max_len_string(
             "AB {} CD",
             123456789
             max_total_len=None,
@@ -161,15 +91,13 @@ def format_max_utf16_len_string(
     args must be equal to the number of placeholders.
 
     max_total_len: Optional[int]
-    The maximum UTF16 length for the return string. args will be shortened
-    roughly evenly until the UTF16 length of the final string will be within
-    the max length. `fstring` will not be shortened to reduce the final
-    string's length.
+    The maximum length for the return string. args will be shortened roughly
+    evenly until the length of the final string will be within the max length.
+    `fstring` will not be shortened to reduce the final string's length.
 
     max_arg_len: Optional[int]
-    The maximum UTF16 length for every arg. This is applied before shortening
-    args to ensure that the return string's UTF16 length is also within
-    `max_total_len`.
+    The maximum length for every arg. This is applied before shortening args
+    to ensure that the return string's length is also within `max_total_len`.
 
     add_ellipsis: bool
     Whether or not args that are shortened to fit either `max_total_len` or
@@ -185,30 +113,28 @@ def format_max_utf16_len_string(
 
     # Convert args to a list of strings
     if max_arg_len is not None:
-        # Limit the UTF16 length of each arg to max_arg_len if it was given.
-        arg_list = [
-            max_utf16_len_string(str(arg), max_arg_len, add_ellipsis) for arg in args
-        ]
+        # Limit the length of each arg to max_arg_len if it was given.
+        arg_list = [max_len_string(str(arg), max_arg_len, add_ellipsis) for arg in args]
     elif max_total_len is not None:
-        # Limit the UTF16 length of each arg to max_total_len if it was given,
+        # Limit the length of each arg to max_total_len if it was given,
         # because each arg can be at most that long.
         arg_list = [
-            max_utf16_len_string(str(arg), max_total_len, add_ellipsis) for arg in args
+            max_len_string(str(arg), max_total_len, add_ellipsis) for arg in args
         ]
     else:
         arg_list = [str(arg) for arg in args]
 
-    # If a max UTF16 length was given for the string, shorten args to fit it.
+    # If a max length was given for the string, shorten args to fit it.
     if max_total_len is not None:
-        # Get a list of the UTF16 length of every arg
-        arg_lens = [utf16_len(arg) for arg in arg_list]
+        # Get a list of the length of every arg
+        arg_lens = [len(arg) for arg in arg_list]
 
-        # Get the total UTF16 lengths of the fstring and args.
-        total_fstring_len = sum(utf16_len(s) for s in split_fstring)
+        # Get the total lengths of the fstring and args.
+        total_fstring_len = sum(len(s) for s in split_fstring)
         total_args_len = sum(arg_lens)
 
         # The maximum total length of all args in order to keep the return
-        # string's UTF16 length within max_total_len.
+        # string's length within max_total_len.
         total_args_maxlen = max_total_len - total_fstring_len
 
         # If the fstring is too long to fit any args in, return the fstring.
@@ -258,11 +184,11 @@ def format_max_utf16_len_string(
                     second_maxlen,
                 )
                 # Shorten the arg
-                arg_list[index] = max_utf16_len_string(
+                arg_list[index] = max_len_string(
                     arg_list[index], shorten_to, add_ellipsis
                 )
-                # Update the arg's UTF16 length in the list of arg UTF16 lengths
-                arg_lens[index] = utf16_len(arg_list[index])
+                # Update the arg's length in the list of arg lengths
+                arg_lens[index] = len(arg_list[index])
                 # Decrease how much the rest of the longest args need to be
                 # shortened by in order to reach the target total length.
                 delta = maxlen - arg_lens[index]
@@ -711,7 +637,7 @@ async def user_select_from_list(
         name = str(index + 1)
         value = option_text_generator(item)
 
-        if utf16_embed_len(message_embed) + utf16_len(name + value) > 6000:
+        if len(message_embed) + len(name + value) > 6000:
             choice_messages.append(
                 await channel.send(message_text, embed=message_embed)
             )
@@ -760,7 +686,7 @@ async def user_select_from_list(
                 pass
             return options[int_response - 1]
         else:
-            error_message = format_max_utf16_len_string(
+            error_message = format_max_len_string(
                 "Error: Option `{}` is out of bounds.", response.content
             )
             await channel.send(error_message, delete_after=7)
@@ -905,8 +831,9 @@ def split_args(args: str, treat_comma_as_space: bool = False) -> list[str]:
 
     return ret
 
+
 # to delete empty directories when empty folders are not needed
-def delete_empty_directories (directory, base_path):
+def delete_empty_directories(directory, base_path):
     # base_path is the inner-most directory that acts as a stopping point
     # in the case that you accidentally delete a folder that's needed even if it's empty
     if directory == base_path:
@@ -921,6 +848,7 @@ def delete_empty_directories (directory, base_path):
     directory = directory.parent
     # run the recursive function with new directory
     delete_empty_directories(directory, base_path)
+
 
 class Multi_Page_Embed_Message:
     """A class representing an embed with multiple pages that can be cycled
@@ -1084,7 +1012,7 @@ class Multi_Page_Embed_Message:
         The maximum number of fields an embed can have.
 
         max_embed_len: int
-        The maximum UTF-16 length of every embed.
+        The maximum length of every embed.
 
         footer_generator: Optional[
             Callable[[int, int, Optional[Union[discord.User, discord.Member]]], str]
@@ -1104,7 +1032,7 @@ class Multi_Page_Embed_Message:
         # that exceed the length of this estimate will be shortened to keep
         # the length of embeds within max_embed_len
         sample_footer_len = (
-            utf16_len(footer_generator(999, 999, page_turner) or "")
+            len(footer_generator(999, 999, page_turner) or "")
             if footer_generator is not None
             else 0
         )
@@ -1128,12 +1056,7 @@ class Multi_Page_Embed_Message:
             name, value, inline = field_generator(item)
             if (
                 max_embed_len
-                <= (
-                    utf16_embed_len(embed)
-                    + utf16_len(name)
-                    + utf16_len(value)
-                    + sample_footer_len
-                )
+                <= (len(embed) + len(name) + len(value) + sample_footer_len)
                 or len(embed.fields) >= max_field_count
             ):
                 # If the field can not fit in the embed, insert it into a new
@@ -1155,14 +1078,14 @@ class Multi_Page_Embed_Message:
         # Add footers to embeds
         if footer_generator is not None:
             for index, page in enumerate(embeds):
-                max_footer_len = max_embed_len - utf16_embed_len(page)
+                max_footer_len = max_embed_len - len(page)
                 page_num = index + 1
 
                 footer_text = footer_generator(page_num, len(embeds), page_turner)
 
                 if footer_text is not None:
                     page.set_footer(
-                        text=max_utf16_len_string(
+                        text=max_len_string(
                             footer_text,
                             maxlen=max_footer_len,
                             add_ellipsis=False,

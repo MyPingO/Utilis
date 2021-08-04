@@ -5,7 +5,7 @@ from utils import (
     get_channel,
     get_role,
     user_select_from_list,
-    format_max_utf16_len_string,
+    format_max_len_string,
 )
 
 import discord
@@ -56,14 +56,14 @@ class Del_Command(Bot_Command):
                             await role.delete()
                             print(f"Role {r} has been deleted")
                             await channel.send(
-                                format_max_utf16_len_string(
+                                format_max_len_string(
                                     "Role `{}` has been deleted.", r
                                 )
                             )
                     except AttributeError:
                         print(f"Could not find a role called {r}")
                         await channel.send(
-                            format_max_utf16_len_string(
+                            format_max_len_string(
                                 "Could not find a role called `{}`", r
                             )
                         )
@@ -81,14 +81,14 @@ class Del_Command(Bot_Command):
                             await del_channel.delete()
                             print(f"Channel {c} has been deleted")
                             await msg.channel.send(
-                                format_max_utf16_len_string(
+                                format_max_len_string(
                                     "Channel `{}` has been deleted.", c
                                 )
                             )
                     except AttributeError:
                         print(f"Could not find a channel called {c}")
                         await msg.channel.send(
-                            format_max_utf16_len_string(
+                            format_max_len_string(
                                 "Could not find a channel called `{}`", c
                             )
                         )
@@ -103,7 +103,7 @@ class Del_Command(Bot_Command):
 
         # ask for verification before deleting the object from the server
         msg = await channel.send(
-            format_max_utf16_len_string(
+            format_max_len_string(
                 "Are you sure you want to delete the `{}` named `{}`? This action cannot be undone.",
                 item,
                 name,

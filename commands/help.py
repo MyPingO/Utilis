@@ -3,10 +3,8 @@ from typing import Union, Optional
 
 from cmd import Bot_Command, bot_commands
 from utils import (
-    utf16_len,
-    utf16_embed_len,
-    max_utf16_len_string,
-    format_max_utf16_len_string,
+    max_len_string,
+    format_max_len_string,
     Multi_Page_Embed_Message,
 )
 
@@ -51,9 +49,9 @@ class Help_Command(Bot_Command):
             ) -> discord.Embed:
                 if paged_embed_msg.page is not None:
                     embed.set_footer(text="")
-                    max_footer_len = 6000 - utf16_embed_len(embed)
+                    max_footer_len = 6000 - len(embed)
 
-                    new_footer = max_utf16_len_string(
+                    new_footer = max_len_string(
                         f" Requested by {msg.author.name}#{msg.author.discriminator} |"
                         + f" Page {paged_embed_msg.page + 1}/{len(paged_embed_msg.pages)}.",
                         max_footer_len,
@@ -117,7 +115,7 @@ class Help_Command(Bot_Command):
 
         # Check to see that a valid command was passed or found
         if not isinstance(cmd, Bot_Command):
-            error_message = format_max_utf16_len_string(
+            error_message = format_max_len_string(
                 "Could not find the command `{}`", command
             )
             await channel.send(error_message, delete_after=7)
@@ -125,7 +123,7 @@ class Help_Command(Bot_Command):
 
         # Make sure the user can run the command
         if not cmd.can_run(channel, user):
-            error_message = format_max_utf16_len_string(
+            error_message = format_max_len_string(
                 "You do not have permission to run `{}` here.", cmd.name
             )
             await channel.send(error_message, delete_after=7)

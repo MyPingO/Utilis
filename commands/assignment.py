@@ -7,7 +7,7 @@ from commands.help import help_cmd
 from random import choice
 from pathlib import Path
 from random import choice
-from utils import user_select_from_list, wait_for_reply, format_max_utf16_len_string, split_args as split_args_helper, delete_empty_directories
+from utils import user_select_from_list, wait_for_reply, format_max_len_string, split_args as split_args_helper, delete_empty_directories
 from typing import Optional
 
 async def link_check(link, msg):
@@ -678,7 +678,7 @@ class Assignment_Command(Bot_Command):
                 return
             # checks to see if the assignment number already exists in the assignments list
             if assignment_num in self.class_info["assignments"]:
-                await msg.channel.send(format_max_utf16_len_string("Error: This assignment already exists! Type **$ {} {}** to view it.", self.name, assignment_num)
+                await msg.channel.send(format_max_len_string("Error: This assignment already exists! Type **$ {} {}** to view it.", self.name, assignment_num)
                 )
                 return
             # if it doesn't exist in the assignments list, we create it

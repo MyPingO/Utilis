@@ -1,5 +1,5 @@
 from cmd import Bot_Command, bot_commands
-from utils import format_max_utf16_len_string
+from utils import format_max_len_string
 
 import discord
 
@@ -28,9 +28,9 @@ class Clear_Command(Bot_Command):
                 await msg.delete()
                 # delete the specified number of messages from this channel
                 await msg.channel.purge(limit=int(parsed_args))
-                print(format_max_utf16_len_string("Deleted {} messages.", parsed_args))
+                print(format_max_len_string("Deleted {} messages.", parsed_args))
                 await msg.channel.send(
-                    format_max_utf16_len_string("Deleted {} messages.", parsed_args),
+                    format_max_len_string("Deleted {} messages.", parsed_args),
                     delete_after=5,
                 )
             else:
