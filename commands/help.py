@@ -97,7 +97,7 @@ class Help_Command(Bot_Command):
                 description=description,
             )
             for command in commands:
-                cmd_description = command.short_help
+                cmd_description = command.get_description()
                 if (
                     len(embed)
                     + len(command.name)

@@ -72,6 +72,12 @@ class Bot_Command:
         """
         return self.long_help
 
+    def get_description(self) -> str:
+        """Returns a brief explanation of the command for use with the help
+        command.
+        """
+        return self.short_help
+
     def can_run(
         self,
         location: Optional[Union[discord.abc.Messageable, discord.Guild]],

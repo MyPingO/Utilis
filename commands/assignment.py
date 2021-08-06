@@ -50,7 +50,7 @@ no_duplicate_random_color = Random_Color()
 
 class Assignment_Command(Bot_Command):
 
-    short_help = "Shows a detailed explanation of the specified assignment including relevant links, hints and solutions for the specified class number."
+    short_help = "Shows a detailed explanation of the specified assignment including relevant links, hints and solutions for {class_number}."
 
     long_help = """Specify the assignment you want help with: $[class_number] [assignment_number] Example: **$211 1** or **$212 3**
 
@@ -88,6 +88,9 @@ class Assignment_Command(Bot_Command):
             return self.long_help
         else:
             return self.long_help + "\n" + self.admin_long_help
+
+    def get_description(self) -> str:
+        return self.short_help.replace("{class_number}", self.name)
 
     # helper function to take a specific answer for reviewing pending links
     async def approve_deny_multiple(self, msg, assignment_num):
