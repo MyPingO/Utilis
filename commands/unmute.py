@@ -1,4 +1,4 @@
-from bot_cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from utils import get_member
 from pathlib import Path
 from typing import Optional, Union
@@ -20,6 +20,8 @@ class Unmute_Command(Bot_Command):
 
     Replace `User` with `all` to server unmute.
     """
+
+    category = Bot_Command_Category.MODERATION
 
     def can_run(self, location, member):
         #only admins are able to use this command

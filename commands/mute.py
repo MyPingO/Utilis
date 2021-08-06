@@ -1,4 +1,4 @@
-from bot_cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from pathlib import Path
 from utils import get_member
 from commands.unmute import unmute
@@ -30,6 +30,8 @@ class Mute_Command(Bot_Command):
 
     Examples: `{bot_prefix}mute @user 2h` `{bot_prefix}mute nickname 2h` `{bot_prefix}mute @user`
     """
+
+    category = Bot_Command_Category.TOOLS
 
     #ensures log file exists and self.muted contains its contents
     def __init__(self):

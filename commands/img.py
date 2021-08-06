@@ -1,4 +1,4 @@
-from bot_cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from utils import get_member
 
 import discord
@@ -15,6 +15,8 @@ class Image_Command(Bot_Command):
     Arguments:
     `User or Emoji` (optional)
     """
+
+    category = Bot_Command_Category.TOOLS
 
     #matches a custom emoji
     re_emoji = re.compile(r"<:(?P<name>(.+)):(\d){18}>")

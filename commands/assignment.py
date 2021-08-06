@@ -1,7 +1,7 @@
 import discord
 import shutil
 import json
-from bot_cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from main import bot_prefix
 from commands.help import help_cmd
 from random import choice
@@ -70,6 +70,8 @@ class Assignment_Command(Bot_Command):
     $[class_number] removeurl [assignment_number] [title_of_link]
     $[class_number] syllabus add
     $[class_number] syllabus delete"""
+
+    category = Bot_Command_Category.CLASS_INFO
 
     syllabus_path = Path("data/syllabus")
 
@@ -985,6 +987,8 @@ class addClass(Bot_Command):
     $class delete [class_number(s)]
     $class pending [class_number(s)] **View pending links in a class**
     """
+
+    category = Bot_Command_Category.MODERATION
 
     name = "class"
     # set variables to path of folders to call them later easily

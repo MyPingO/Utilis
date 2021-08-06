@@ -3,12 +3,22 @@ from utils import format_max_len_string
 
 import discord
 from pathlib import Path
+from enum import Enum
 from importlib import import_module
 from typing import Union, Optional
 
 
 # A Union of different types that can be used to represent a guild
 GuildRepr = Union[discord.Guild, str, int]
+
+
+class Bot_Command_Category(Enum):
+    CLASS_INFO = "Class info"
+    COMMUNITY = "Community"
+    TOOLS = "Tools"
+    MODERATION = "Moderation"
+    BOT_META = "Bot control"
+    NONE = "Misc."
 
 
 class Bot_Command:
@@ -40,6 +50,8 @@ class Bot_Command:
     long_help: str = "No information available for this command."
 
     aliases: list[str] = []
+
+    category: Bot_Command_Category = Bot_Command_Category.NONE
 
     def get_help(
         self, user: Optional[Union[discord.User, discord.Member]], args: Optional[str]
@@ -265,17 +277,21 @@ class Bot_Commands:
             for alias in cmd.aliases:
                 del self._guild_commands[g.id][alias]
 
+    def get_global_commands(self) -> list[Bot_Command]:
+        """Returns a list of all global commands."""
+        return list(self._unique_global_commands.values())
+
     def get_commands_in(
         self, guild: Optional[GuildRepr] = None, include_global_commands: bool = True
     ) -> list[Bot_Command]:
         """Returns a list of all commands that can be used in `guild`. If
         `guild` is `None`, only global commands are returned.
         `include_global_commands` controls whether to include global commands
-        in the return list or only local commands.
+        in the return list or only guild commands.
         """
         if guild is None:
             if include_global_commands:
-                return list(self._unique_global_commands.values())
+                return self.get_global_commands()
             else:
                 return []
 

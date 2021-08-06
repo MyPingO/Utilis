@@ -1,4 +1,4 @@
-from bot_cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from core import client
 from pathlib import Path
 from utils import (
@@ -29,6 +29,8 @@ class Del_Command(Bot_Command):
     To delete multiple objects of the same type, separate the names by commas.
     Cannot delete objects of different types in one command.
     """
+
+    category = Bot_Command_Category.MODERATION
 
     def can_run(self, location, member):
         return member is not None and member.guild_permissions.administrator

@@ -4,7 +4,7 @@ import json
 import random
 from commands.mute import mute
 from commands.unmute import unmute
-from bot_cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from pathlib import Path
 from datetime import datetime, time, timedelta
 from utils import get_member
@@ -26,6 +26,8 @@ class Warn_Command(Bot_Command):
 
     ~Example: (Assume this is the same user)
     **$warn TheLegend47** or **$warn [1234567891012345678]** or **$warn Legend** """
+
+    category = Bot_Command_Category.MODERATION
 
     def __init__(self):
         self.warnings_path = Path("data/warn/warnings.json")

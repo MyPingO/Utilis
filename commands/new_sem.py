@@ -1,4 +1,4 @@
-from bot_cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 
 import discord
 
@@ -12,6 +12,8 @@ class New_Semester_Command(Bot_Command):
     Arguments:
     `None`
     """
+
+    category = Bot_Command_Category.MODERATION
 
     categories = ["random"]
 

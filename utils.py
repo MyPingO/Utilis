@@ -850,6 +850,34 @@ def delete_empty_directories(directory, base_path):
     delete_empty_directories(directory, base_path)
 
 
+def paged_footer_generator(
+    pg: int, total_pgs: int, pg_turner: Optional[Union[discord.User, discord.Member]]
+) -> Optional[str]:
+    """A function that generates footers for every embeds that are part of a
+    paged set. Returns a string to set the footer to, or `None` if there
+    should not be a footer.
+
+    Parameters
+    -----------
+    pg: int
+    The current page number.
+
+    total_pgs: int
+    The total number of pages.
+
+    pg_turner: Optional[Union[discord.User, discord.Member]]
+    The user that can turn pages (or `None` if any user can turn pages).
+    """
+    ret = ""
+    if pg_turner is not None:
+        ret += f" Requested by {pg_turner.name}#{pg_turner.discriminator}"
+        if total_pgs > 1:
+            ret += " | "
+    if total_pgs > 1:
+        ret += f"Page {pg}/{total_pgs}. React with ⬅️ or ➡️ to turn the pages."
+    return ret if ret else None
+
+
 class Multi_Page_Embed_Message:
     """A class representing an embed with multiple pages that can be cycled
     using reactions.
@@ -963,18 +991,7 @@ class Multi_Page_Embed_Message:
             Callable[
                 [int, int, Optional[Union[discord.User, discord.Member]]], Optional[str]
             ]
-        ] = lambda pg, total_pgs, pg_turner: (
-            (
-                f" Requested by {pg_turner.name}#{pg_turner.discriminator}"
-                if pg_turner is not None
-                else ""
-            )
-            + (" | " * (pg_turner is not None and total_pgs > 1))
-            + (
-                f"Page {pg}/{total_pgs}. React with ⬅️ or ➡️ to turn the pages."
-                * (total_pgs > 1)
-            )
-        ),
+        ] = paged_footer_generator,
     ) -> list[discord.Embed]:
         """Creates a list of `discord.Embed`s from with one field per item
         from `items` with as many fields on one embed as possible.

@@ -1,4 +1,4 @@
-from bot_cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from utils import format_max_len_string
 
 import discord
@@ -15,6 +15,8 @@ class Clear_Command(Bot_Command):
     Arguments:
     `Number`
     """
+
+    category = Bot_Command_Category.MODERATION
 
     def can_run(self, location, member):
         # only admins can purge messages

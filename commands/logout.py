@@ -1,6 +1,6 @@
 import discord
 from core import client
-from bot_cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 
 
 class Logout_Command(Bot_Command):
@@ -13,6 +13,8 @@ class Logout_Command(Bot_Command):
     long_help = """Shuts down the bot.
     Arguments:
     `None`"""
+
+    category = Bot_Command_Category.BOT_META
 
     def can_run(self, location, member):
         return member is not None and member.guild_permissions.administrator

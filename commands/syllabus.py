@@ -1,7 +1,7 @@
 import discord
 import json
 
-from bot_cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from discord import guild
 from utils import wait_for_reply
 from pathlib import Path
@@ -11,6 +11,7 @@ class Syllabus_Command(Bot_Command):
     name = "syllabus"
     short_help = "Gives syllabus of specified professor."
     long_help = "Gives syllabus of specified professor. Type $syllabus [professor] to get a download link for that professors syllabus."
+    category = Bot_Command_Category.CLASS_INFO
 
     syllabus_path = Path("data/syllabus")
     # downloadSyllabus_path = Path("data/syllabus/211syllabus.pdf")

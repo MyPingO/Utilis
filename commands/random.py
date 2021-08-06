@@ -1,4 +1,4 @@
-from bot_cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 
 import discord
 import random
@@ -17,6 +17,8 @@ class Random_Command(Bot_Command):
     `Lower bound`
     `Upper bound`
     """
+
+    category = Bot_Command_Category.TOOLS
 
     args_matcher = re.compile(r"^(\d+)\s+(\d+)$")
 

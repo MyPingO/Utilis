@@ -1,12 +1,8 @@
 import discord
 from typing import Union, Optional
 
-from bot_cmd import Bot_Command, bot_commands
-from utils import (
-    max_len_string,
-    format_max_len_string,
-    Multi_Page_Embed_Message,
-)
+from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
+import utils
 
 
 class Help_Command(Bot_Command):
@@ -19,6 +15,8 @@ class Help_Command(Bot_Command):
     `command`
     `None`
     """
+
+    category = Bot_Command_Category.TOOLS
 
     async def run(self, msg: discord.Message, args: str):
         if args:
@@ -33,25 +31,17 @@ class Help_Command(Bot_Command):
                 )
         else:
             # Otherwise, print a list of all commands with a short description
-            commands = sorted(
-                (
-                    cmd
-                    for cmd in bot_commands.get_commands_in(msg.guild)
-                    if bot_commands.can_run(cmd, msg.channel, msg.author)
-                ),
-                key=lambda c: c.name.casefold(),
-            )
-            title = "Commands"
-            description = "Run `help <command>` to get detailed information about a specific command."
 
             def embed_editor(
-                embed: discord.Embed, paged_embed_msg: Multi_Page_Embed_Message
+                embed: discord.Embed, paged_embed_msg: utils.Multi_Page_Embed_Message
             ) -> discord.Embed:
+                # Updates the help message's embed after pages can no longer
+                # be turned.
                 if paged_embed_msg.page is not None:
                     embed.set_footer(text="")
                     max_footer_len = 6000 - len(embed)
 
-                    new_footer = max_len_string(
+                    new_footer = utils.max_len_string(
                         f" Requested by {msg.author.name}#{msg.author.discriminator} |"
                         + f" Page {paged_embed_msg.page + 1}/{len(paged_embed_msg.pages)}.",
                         max_footer_len,
@@ -61,17 +51,77 @@ class Help_Command(Bot_Command):
 
                 return embed
 
-            help_embeds = Multi_Page_Embed_Message.embed_list_from_items(
-                commands,
-                lambda i: title,
-                lambda i: description,
-                lambda c: (c.name, c.short_help, False),
-                msg.author,
-            )
+            help_embeds = self.get_help_embeds(msg.channel, msg.author)
 
-            await Multi_Page_Embed_Message(help_embeds, msg.author, embed_editor).send(
-                msg.channel
+            await utils.Multi_Page_Embed_Message(
+                help_embeds, msg.author, embed_editor if len(help_embeds) > 1 else None
+            ).send(msg.channel)
+
+    def get_help_embeds(
+        self,
+        channel: discord.abc.Messageable,
+        user: Union[discord.User, discord.Member],
+    ) -> list[discord.Embed]:
+        """Returns a list of embeds giving an overview of all the commands
+        `user` has access to in `channel` separated by each command's
+        category.
+        """
+        # Group all available commands based on their category
+        command_categories: dict[Bot_Command_Category, list[Bot_Command]] = {
+            k: [] for k in Bot_Command_Category
+        }
+        if isinstance(channel, discord.abc.GuildChannel):
+            for cmd in bot_commands.get_commands_in(channel.guild):
+                if cmd.can_run(channel, user):
+                    command_categories[cmd.category].append(cmd)
+        else:
+            for cmd in bot_commands.get_global_commands():
+                if cmd.can_run(channel, user):
+                    command_categories[cmd.category].append(cmd)
+
+        ret = []
+        sample_footer_len = len(utils.paged_footer_generator(999, 999, user) or "")
+        description = (
+            "Run `help <command>` to get detailed information about a specific command."
+        )
+
+        for category, commands in command_categories.items():
+            # Create one or more embeds for all of the commands in each
+            # category
+            if not commands:
+                continue
+            commands.sort(key=lambda c: c.name.casefold())
+
+            embed = discord.Embed(
+                title=f"Commands | {category.value}",
+                description=description,
             )
+            for command in commands:
+                cmd_description = command.short_help
+                if (
+                    len(embed)
+                    + len(command.name)
+                    + len(cmd_description)
+                    + sample_footer_len
+                    > 6000
+                    or len(embed.fields) >= 25
+                ):
+                    # If command info won't fit in the embed, create a new one
+                    ret.append(embed)
+                    embed = discord.Embed(
+                        title=f"Commands | {category.value}",
+                        description=description,
+                    )
+                embed.add_field(name=command.name, value=cmd_description, inline=False)
+            ret.append(embed)
+
+        # Add footers to embeds
+        for index, e in enumerate(ret):
+            footer = utils.paged_footer_generator(index + 1, len(ret), user)
+            if footer:
+                e.set_footer(text=footer)
+
+        return ret
 
     async def get_command_info(
         self,
@@ -115,7 +165,7 @@ class Help_Command(Bot_Command):
 
         # Check to see that a valid command was passed or found
         if not isinstance(cmd, Bot_Command):
-            error_message = format_max_len_string(
+            error_message = utils.format_max_len_string(
                 "Could not find the command `{}`", command
             )
             await channel.send(error_message, delete_after=7)
@@ -123,7 +173,7 @@ class Help_Command(Bot_Command):
 
         # Make sure the user can run the command
         if not cmd.can_run(channel, user):
-            error_message = format_max_len_string(
+            error_message = utils.format_max_len_string(
                 "You do not have permission to run `{}` here.", cmd.name
             )
             await channel.send(error_message, delete_after=7)

@@ -1,4 +1,4 @@
-from bot_cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from pathlib import Path
 from utils import get_member, get_role,  Multi_Page_Embed_Message
 from typing import Optional, Union
@@ -25,6 +25,8 @@ class Schedule_Command(Bot_Command):
     All participants will be pinged by a designated role 5 minutes in advance
     as a reminder, as well as when the event starts.
     """
+
+    category = Bot_Command_Category.COMMUNITY
 
     #discord's global mentions or command-specific keywords
     restricted = ["all", "here", "everyone"]

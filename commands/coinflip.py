@@ -1,4 +1,4 @@
-from bot_cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 
 import discord
 import random
@@ -15,6 +15,8 @@ class Coin_Flip_Command(Bot_Command):
     Arguments:
     `None`
     """
+
+    category = Bot_Command_Category.MODERATION
 
     async def run(self, msg: discord.Message, args: str):
         choice = f"{random.choice(self.coin)}"

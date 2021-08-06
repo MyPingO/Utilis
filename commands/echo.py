@@ -1,4 +1,4 @@
-from bot_cmd import Bot_Command, bot_commands
+from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 
 import discord
 
@@ -13,6 +13,8 @@ class Echo_Command(Bot_Command):
     `text`
     `None`
     """
+
+    category = Bot_Command_Category.TOOLS
 
     async def run(self, msg: discord.Message, args: str):
         if args:
