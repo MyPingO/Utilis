@@ -68,8 +68,8 @@ async def on_ready():
 
 @client.event
 async def on_message(msg: discord.Message):
-    # Check to see if the message is not from the bot
-    if msg.author != client.user:
+    # Check to see if the message is not from a bot
+    if not msg.author.bot and msg.author != client.user:
         # Check to see if the message is trying to run a command
         if msg.content.startswith(bot_prefix) or starts_with_mention(msg.content):
             # Get the command the member is trying to run
