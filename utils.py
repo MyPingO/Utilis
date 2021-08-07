@@ -687,7 +687,7 @@ async def user_select_from_list(
             return options[int_response - 1]
         else:
             error_message = format_max_len_string(
-                "Error: Option `{}` is out of bounds.", response.content
+                "Option `{}` is out of bounds. Please try again!", response.content
             )
             await channel.send(error_message, delete_after=7)
 
@@ -715,8 +715,8 @@ async def wait_for_reply(
         if error_message is not None:
             await channel.send(error_message)
         return None
-        # Returning .content because response == to all details of the response including date,id's etc.
-        # We want just the content
+        # To get just the message of the response, after you call this function just set your variable = to variable.content
+        # This function returns all data of the message such as time/date, id number, etc.
 
 
 _re_arg_splitter = re.compile(
