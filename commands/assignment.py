@@ -11,6 +11,9 @@ from utils import user_select_from_list, wait_for_reply, format_max_len_string, 
 from typing import Optional
 
 async def link_check(link, msg):
+    if link == None:
+        link = "stop"
+        return link
     if type(link) == discord.message.Message:
         link = link.content
     if (link.casefold().startswith("http://") and len(link) > len("http://")) or (
@@ -19,6 +22,9 @@ async def link_check(link, msg):
     else:
         await msg.channel.send("Please enter a proper link. Example: http://example.com **or** https://example.com\nYou can also type **Stop** to exit the command.")
         link = await wait_for_reply(msg.author, msg.channel)
+        if link == None:
+            link = "stop"
+            return link
         if link.content == "stop":
             await msg.channel.send("No changes were made")
             return link.content
@@ -49,27 +55,22 @@ class Random_Color:
 no_duplicate_random_color = Random_Color()
 
 class Assignment_Command(Bot_Command):
-
+#TODO Fix help message [class_number]
     short_help = "Shows a detailed explanation of the specified assignment including relevant links, hints and solutions for {class_number}."
 
     long_help = """Specify the assignment you want help with: $[class_number] [assignment_number] Example: **$211 1** or **$212 3**
 
     **Sub-commands:**
         $[class_number] assignments
-        $[class_number] syllabus
-        $[class_number] addurl [assignment_number] [url] [title]
+        $[class_number] add
+        $[class_number] delete
         $[class_number] solution [assignment_number(s)]
-        $[class_number] solution add
+        $[class_number] syllabus
     """
 
     admin_long_help = """**ADMINS ONLY:**
-    $[class_number] solution delete
-    $[class_number] add [assignment_number]
-    $[class_number] edit [assignment_number]
-    $[class_number] pending [assignment_number(s)]
-    $[class_number] removeurl [assignment_number] [title_of_link]
-    $[class_number] syllabus add
-    $[class_number] syllabus delete"""
+    $[class_number] edit
+    $[class_number] pending [assignment_number(s)] """
 
     category = Bot_Command_Category.CLASS_INFO
 
@@ -200,97 +201,7 @@ class Assignment_Command(Bot_Command):
                 )
                 await msg.channel.send(embed=relevant_links_list)
 
-        # adding relevant urls to specified assignments
-        # Syntax: $211 addurl 1 https://example.com Example
-        elif args.casefold().startswith("addurl "):
-            # splits the command string into parts divided by a space
-            temp_split_args = args.split(" ")
-            split_args = []
-            for arg in temp_split_args:
-                if arg != "":
-                    split_args.append(arg)
-            if len(split_args) < 4:
-                await msg.channel.send(
-                    "Error: Please fill out the command correctly! Type $[class_name] to learn how to use commands"
-                )
-                return
-            if split_args[1] not in self.class_info["assignments"]:
-                await msg.channel.send(
-                    f"Error: The assignment you are trying to edit does not exist, please check the assignment you want to edit actually exists using **${self.name} assignments"
-                )
-                return
-            """split_args[0] = add
-               split_args[1] = assignment#
-               split_args[2] = link.com
-               split_args[3] = title"""
-            assignment_num = split_args[1]
-            url_add = await link_check(split_args[2], msg)
-            if url_add == "stop":
-                return
-            # check if url is a valid url i.e starts with https// and has something after https://
-
-            title_add = " ".join(split_args[3:])
-            if len(title_add) > 100:
-                await msg.channel.send(
-                    "Error: Title cannot be more than 100 characters"
-                )
-                return
-
-            # checks for duplicate urls in queue
-            for requested_dict in self.class_info["assignments"][assignment_num][
-                "requested_urls"
-            ]:
-                if url_add == requested_dict["url"]:
-                    await msg.channel.send(
-                        "Error: The link you are trying to add is already in the queue, please wait for a mod to review it"
-                    )
-                    return
-                # checks for duplicate titles in queue
-                elif title_add == requested_dict["title"]:
-                    await msg.channel.send(
-                        "Error: The title you are trying to set for this link is already used for another link, please use another title."
-                    )
-                    return
-            # checks for duplicate links already added
-            for link_dict in self.class_info["assignments"][assignment_num][
-                "relevant_links"
-            ]:
-                if url_add == link_dict["url"]:
-                    await msg.channel.send(
-                        f"Error: The link you are trying to add has already been added to another link in this assignment titled: **{link_dict['title']}**"
-                    )
-                    return
-                # checks for duplicate titles already added
-                elif title_add == link_dict["title"]:
-                    await msg.channel.send(
-                        "Error: The title you are trying to set is already used for another link for this assignment, please use another title."
-                    )
-                    return
-            # This is what will be added to queue and what will be approveed/denied
-            new_added_url = {
-                "title": title_add,
-                "url": url_add,
-                "user": msg.author.id,
-            }
-            # no need for queue if admin tries to add something
-            if msg.author.guild_permissions.administrator:
-                self.class_info["assignments"][assignment_num]["relevant_links"].append(
-                    new_added_url
-                )
-                await msg.channel.send(
-                    "Since you are an admin, this got added to Relevant Links right away!"
-                )
-                self.add_class.save_assignments(self.guild_id)
-                return
-            # adds to queue
-            self.class_info["assignments"][assignment_num]["requested_urls"].append(
-                new_added_url
-            )
-            # saves JSON file so queue doesnt get erased if bot crashes
-            self.add_class.save_assignments(self.guild_id)
-            await msg.channel.send(
-                "Your request to add this link will be reviewed by an admin."
-            )
+            
 
         # to check whats in queue for specified class (needs to be admin)
         # Syntax: $211 pending 1
@@ -333,71 +244,100 @@ class Assignment_Command(Bot_Command):
             await self.approve_deny_multiple(msg, assignment_num)
 
         # removes a url from the relevant links list for an assignment
-        # Syntax: $211 removeurl 1 title
-        elif args.casefold().startswith("removeurl "):
-            # to remove a link from the relevant links list
-            # must have admin permissions
-            if not msg.author.guild_permissions.administrator:
-                await msg.channel.send(
-                    "Error: You cannot use this command since you are not admin!"
-                )
-                return
-            temp_split_args = args.split(" ")
-            split_args = []
-            for arg in temp_split_args:
-                if arg != "":
-                    split_args.append(arg)
+        # Syntax: $211 removeurl 1 titl
+            
 
-            """split_args[0] = remove
-            split_args[1] = assignment#
-            split_args[2] = title """
-
-            assignment_num = split_args[1]
-            if assignment_num not in self.class_info["assignments"]:
-                await msg.channel.send(
-                    f"Error: The assignment you are trying to view does not exist, please check the assignment you want to view actually exists using **${self.name} assignments**"
-                )
+        elif args.casefold() == "add":
+            await msg.channel.send("What would you like to add?")
+            add_options = ["An assignment", "A solution to an assignment", "A helpful or relevant link for an assignment", "Notes for the class", "The class syllabus"]
+            add_choice = await user_select_from_list(msg.channel, add_options, lambda x: x, msg.author, "Add Options", 30)
+            if add_choice == None:
                 return
-            # combine title if there are spaces
-            title = " ".join(split_args[2:])
-            # loops through list
-            for i in self.class_info["assignments"][assignment_num][
-                "relevant_links"
-            ]:
-                # if it finds a matching title
-                if title == i["title"]:
-                    # remove it form the list
-                    self.class_info["assignments"][assignment_num]["relevant_links"].remove(i)
-                    # confirm that a match was found and was deleted
+            if add_choice == "An assignment":
+                # if the the user is not an admin/has admin permissions
+                if not msg.author.guild_permissions.administrator:
                     await msg.channel.send(
-                        f"Removed **{i['title']}** from Relevant Links"
+                        "Error: You cannot use this command since you are not admin!"
                     )
-                    # save JSON File
-                    self.add_class.save_assignments(self.guild_id)
                     return
-            await msg.channel.send(
-                f"Error: **{title}** not found in Relevant Links. This feature is case sensitive. Make sure you typed the title exactly as it is"
-            )
-            return
-
-        # add, delete or give the solution to an assignment (solutions should be added after their due date)
-        elif args.casefold().startswith("solution ") or args.casefold().startswith("solutions "):
-            # adding this "if else" because it may be intuitive to type "solutions" when adding or viewing multiple solutions
-            if args.casefold().startswith("solution "):
-                solution_choice = args[len("solution") :].strip()
-            else:
-                solution_choice = args[len("solutions") :].strip()
-            # $211 solution add
-            if solution_choice.casefold() == "add":
-                # get added assignment names into a list
-                assignments = []
-                for assignment_num in self.class_info["assignments"]:
-                    assignments.append("Assignment " + assignment_num)
-                await msg.channel.send("Which assignment solution do you want to add?")
-                # choose which assignment to add a solution to. If no choice is given, return
-                assignment_num = await user_select_from_list(msg.channel, assignments, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
+                await msg.channel.send("Please enter the class number of the class you want to add")
+                assignment_num = wait_for_reply(msg.author, msg.channel, timeout=30)
                 if assignment_num == None:
                     return
+                assignment_num = assignment_num.content
+                # checks if the assignment they want to add is a number (i.e number of the assignment)
+                if not assignment_num.isdigit():
+                    await msg.channel.send(
+                        "Error: You must provide the number for the assignment you are trying to add! Example: $211 add **10** or $220 add **7**"
+                    )
+                    return
+                elif len(assignment_num) > 10:
+                    await msg.channel.send("Error: Assignment number can't be more than 10 digits!")
+                    return
+                # checks to see if the assignment number already exists in the assignments list
+                if assignment_num in self.class_info["assignments"]:
+                    await msg.channel.send(format_max_len_string("Error: This assignment already exists! Type **$ {} {}** to view it.", self.name, assignment_num)
+                    )
+                    return
+                # if it doesn't exist in the assignments list, we create it
+                if assignment_num not in self.class_info["assignments"]:
+                    # this is the standard layout of every assignment
+                    new_assignment = {
+                        "title": "",
+                        "url": "",
+                        "description": "",
+                        "relevant_links": [],
+                        "requested_urls": [],
+                    }
+                    # go through each key (i.e "title", "url", "description", etc) but only
+                    # 3 times so that they can't add a relevant link or add a requested url straight away
+                    key_counter = 0
+                    for key in new_assignment:
+                        if key_counter == 3:
+                            break
+                        await msg.channel.send(f"Please enter a {key} for this assignment")
+                        # get their input for either title, url or description
+                        key_value = await wait_for_reply(msg.author, msg.channel, timeout=300)
+                        if key_value == None:
+                            return
+                        key_value = key_value.content
+                        if key_value == None:
+                            return
+                        # if they are setting a title (i.e key_counter == 0)
+                        if key_counter == 0 and len(key_value) > 100:
+                        #if the title is longer than 100 characters, send an error message
+                            await msg.channel.send(
+                                "Error: Title cannot be more than 100 characters"
+                            )
+                            return
+                        # if they are making a url (i.e key_counter == 1) check to see if the link is valid
+                        if key_counter == 1:
+                            key_value = await link_check(key_value, msg)
+                            if key_value == "stop":
+                                return
+                        # if they are making a url (i.e key_counter == 2)
+                        # set their edits to what they wanted to edit if it passes all tests
+                        new_assignment[key] = key_value
+                        key_counter += 1
+                    # save assignments to update the JSON file in real time
+                    self.class_info["assignments"][assignment_num] = new_assignment
+                    self.add_class.save_assignments(self.guild_id)
+                    await msg.channel.send(
+                        f"Done! You can view the added assignment by typing **${self.name} {assignment_num}**. If you want to edit this assignment in case you made a mistake, type **${self.name} edit {assignment_num}**."
+                    )
+                    return
+            # add a solution to an assignment
+            if add_choice == "A solution to an assignment":
+                # get added assignment names into a list
+                assignments_list = []
+                for assignment_num in self.class_info["assignments"]:
+                    assignments_list.append("Assignment " + assignment_num)
+                await msg.channel.send("For which assignment do you want to add a solution?")
+                # choose which assignment to add a solution to. If no choice is given, return
+                response = await user_select_from_list(msg.channel, assignments_list, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
+                if response == None:
+                    return
+                assignment_num = split_args_helper(response)[1]
                 # set a directory where solutions will be stored
                 solution_directory = (self.add_class.solutions_path/self.guild_id/self.name/assignment_num/str(msg.author.id))
                 await msg.channel.send("Enter a name for your solution. Your name can only contain letters or numbers. Type **\Stop/** to stop adding a solution.")
@@ -405,6 +345,8 @@ class Assignment_Command(Bot_Command):
                 # unless user types "stop" in which case, return
                 while True:
                     solution_name = await wait_for_reply(msg.author, msg.channel)
+                    if solution_name == None:
+                        return
                     if solution_name.content.casefold() == "\stop/":
                         await msg.channel.send("No changes were made")
                         return
@@ -479,8 +421,208 @@ class Assignment_Command(Bot_Command):
                             await msg.channel.send("Edits have been denied! No changes were made.")
                             return
                     await msg.channel.send("Enter the next file or type **Done** if you are finished.")
-            # $211 solution delete
-            elif solution_choice.casefold() == "delete":
+            # add notes to a class
+            if add_choice == "Notes for the class": #TODO work on a way to add notes
+                return
+            # add a syllabus to the class
+            if add_choice == "The class syllabus":
+                # set a directory to store the syllabus in
+                syllabus_path = (self.syllabus_path/self.guild_id/self.name)
+                # check if the directory already exists i.e syllabus already added to that class
+                if syllabus_path.exists():
+                    await msg.channel.send(f"The syllabus to the {self.name} class has already been added. To view it type **{bot_prefix}{self.name} syllabus**. To delete it type **{bot_prefix}{self.name} syllabus delete**")
+                    return
+                # otherwise, create the directory
+                syllabus_path.mkdir(parents = True)
+                # while True loop to give user chance to retry incase of error
+                # i.e no attachments given, more than one attachment given or attachment size is 0 bytes.
+                while True:
+                    await msg.channel.send("Please submit the syllabus as a file or type **Stop** to exit the command")
+                    syllabus = await wait_for_reply(msg.author, msg.channel)
+                    if syllabus == None:
+                        return
+                    if syllabus.content.casefold() == "stop":
+                        delete_empty_directories(syllabus_path, self.syllabus_path)
+                        await msg.channel.send("No changes were made.")
+                        return
+                    if not syllabus.attachments:
+                        await msg.channel.send("No attachments given!")
+                        continue
+                    if len(syllabus.attachments) > 1:
+                        await msg.channel.send("You may only attach one file!")
+                        continue
+                    if syllabus.attachments[0].size == 0:
+                        await msg.channel.send(f"**{syllabus.attachments[0].filename}** is an empty file!")
+                        continue
+                    else:
+                        break
+                # confirm with user if file is valid and correct
+                confirm_or_deny = ["Confirm", "Deny"]
+                await msg.channel.send(f"Please confirm that **{syllabus.attachments[0].filename}** is the correct syllabus for the **{self.name}** class!")
+                response = await user_select_from_list(msg.channel, confirm_or_deny, lambda x: x, msg.author, "", 30)
+                if response == "Confirm":
+                    # if user confirms, add file to directory
+                    await syllabus.attachments[0].save(syllabus_path/f"{syllabus.attachments[0].filename}")
+                    await msg.channel.send("Syllabus has been added!")
+                else:
+                    # otherwise, delete the directory and all of its parents
+                    delete_empty_directories(syllabus_path, self.syllabus_path)
+                    await msg.channel.send("No changes were made.")
+                return
+            # add a link to an assignment
+            if add_choice == "A helpful or relevant link for an assignment":
+                assignments_list = []
+                for assignment_num in sorted(
+                    self.class_info["assignments"].keys(), key=lambda num: int(num)
+                ):
+                    # adds sorted numbers to a list
+                    assignments_list.append(f"Assignment {assignment_num} - [{self.class_info['assignments'][assignment_num]['title']}]({self.class_info['assignments'][assignment_num]['url']})")
+                # if there are no assignments for that class (i.e nothing in assignments_list), send a message
+                if len(assignments_list) == 0:
+                    await msg.channel.send(
+                        f"There are no assignments added for class **{self.name}**"
+                    )
+                    return
+                await msg.channel.send("For which assignment do you want to add a link to?")
+                response = await user_select_from_list(msg.channel, assignments_list, lambda x: x, msg.author, f"{self.name} Assignments", 30)
+                if response == None:
+                    return
+                assignment_num = split_args_helper(response)[1]
+                await msg.channel.send("Enter the link you want to add for this assignment:")
+                # check if url is a valid url
+                url_add = await link_check(await wait_for_reply(msg.author, msg.channel), msg)
+                if url_add == "stop":
+                    return
+                await msg.channel.send("Enter a title for this link. **Note** Title cannot be more than 100 characters:")
+                title_add = await wait_for_reply(msg.author, msg.channel)
+                if title_add == None:
+                    return
+                title_add = title_add.content
+                while True:
+                    if len(title_add) > 100:
+                        await msg.channel.send("Title cannot be more than 100 characters! Please enter another title or type **\Stop/** to stop adding a link.")
+                        title_add = await wait_for_reply(msg.author, msg.channel)
+                        if title_add == None:
+                            return
+                        title_add = title_add.content
+                        continue
+                    else: 
+                        break
+                # checks for duplicate urls in queue
+                for requested_dict in self.class_info["assignments"][assignment_num][
+                    "requested_urls"
+                ]:
+                    if url_add == requested_dict["url"]:
+                        await msg.channel.send(
+                            "Error: The link you are trying to add is already in the queue, please wait for a mod to review it"
+                        )
+                        return
+                    # checks for duplicate titles in queue
+                    elif title_add == requested_dict["title"]:
+                        await msg.channel.send(
+                            "Error: The title you are trying to set for this link is already used for another link, please use another title."
+                        )
+                        return
+                # checks for duplicate links already added
+                for link_dict in self.class_info["assignments"][assignment_num][
+                    "relevant_links"
+                ]:
+                    if url_add == link_dict["url"]:
+                        await msg.channel.send(
+                            f"Error: The link you are trying to add has already been added to another link in this assignment titled: **{link_dict['title']}**"
+                        )
+                        return
+                    # checks for duplicate titles already added
+                    elif title_add == link_dict["title"]:
+                        await msg.channel.send(
+                            "Error: The title you are trying to set is already used for another link for this assignment, please use another title."
+                        )
+                        return
+                # This is what will be added to queue and what will be approveed/denied
+                new_added_url = {
+                    "title": title_add,
+                    "url": url_add,
+                    "user": msg.author.id,
+                }
+                # no need for queue if admin tries to add something
+                if msg.author.guild_permissions.administrator:
+                    self.class_info["assignments"][assignment_num]["relevant_links"].append(
+                        new_added_url
+                    )
+                    await msg.channel.send(
+                        "Since you are an admin, this got added to Relevant Links right away!"
+                    )
+                    self.add_class.save_assignments(self.guild_id)
+                    return
+                # adds to queue
+                self.class_info["assignments"][assignment_num]["requested_urls"].append(
+                    new_added_url
+                )
+                # saves JSON file so queue doesnt get erased if bot crashes
+                self.add_class.save_assignments(self.guild_id)
+                await msg.channel.send(
+                    "Your request to add this link will be reviewed by an admin."
+                )
+                return
+        elif args.casefold() == "delete":
+            await msg.channel.send("What would you like to delete?")
+            delete_options = ["An assignment", "A solution to an assignment", "A helpful or relevant link for an assignment", "Notes for the class", "The class syllabus"]
+            delete_choice = await user_select_from_list(msg.channel, delete_options, lambda x: x, msg.author, "Delete Options", 30)
+            if delete_choice == None:
+                return
+            # to delete an assignment
+            if delete_choice == "An assignment":
+                if not msg.author.guild_permissions.administrator:
+                    await msg.channel.send("Error: You cannot use this command since you are not admin!")
+                    return
+                await msg.channel.send("Here is a list of the currently added assignments. Choose which ones to delete by their assignment number and seperate each number by a comma (`,`)!")
+                # for loop lambda function that sorts assignments in order (this is done incase assignments weren't added in order)
+                # ex: added in order: 1, 2, 3, 5, 4, 9, 8, 7 ------> displays in order: 1, 2, 3, 4, 5, 6, 7, 8, 9
+                # only works numerically, not with any other characters (i.e: A, a, $, -, +) | Note* converts number char into type int
+                assignments_list = ""
+                for assignment_num in sorted(
+                    self.class_info["assignments"].keys(), key=lambda num: int(num)
+                ):
+                    # adds sorted numbers to a list
+                    assignments_list += f"Assignment {assignment_num} - [{self.class_info['assignments'][assignment_num]['title']}]({self.class_info['assignments'][assignment_num]['url']})\n"
+                # if there are no assignments for that class (i.e nothing in assignments_list), send a message
+                if len(assignments_list) == 0:
+                    await msg.channel.send(
+                        f"There are no assignments added for class **{self.name}**"
+                    )
+                    return
+                assignments_embed = discord.Embed(
+                    color=0x00A7FE,  # cyan
+                )
+                # using the embed field to increase character limit to 6000 and printing the assignments_list using the field
+                assignments_embed.add_field(
+                    name=f"{self.name} Existing Assignments\n", value=f"{assignments_list}"
+                )
+                await msg.channel.send(embed=assignments_embed)
+                assignments_list = await wait_for_reply(msg.author, msg.channel)
+                if assignments_list == None:
+                    return
+                assignments_list = split_args_helper(assignments_list.content, True)
+                assignments_list = set(assignments_list)
+                for assignment_num in assignments_list:
+                    # if an assignment does not exist in the JSON file
+                    if assignment_num not in self.class_info["assignments"].keys():
+                        await msg.channel.send(f"Assignment **{assignment_num}** does not exist in the {self.name} class.")
+                    else:
+                        # confirm deletion of assignment with user
+                        await msg.channel.send(f"⚠️ **__ARE YOU SURE YOU WANT TO DELETE THE ASSIGNMENT__   {assignment_num}   __FROM THE {self.name} CLASS? THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__** ⚠️")
+                        yes_or_no = ["Yes", "No"]
+                        response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                        if response == "Yes":
+                            # if user cofirms, delete assignment from the JSON file, otherwise just do nothing
+                            del self.class_info["assignments"][assignment_num]
+                            self.add_class.save_assignments(self.guild_id)
+                            await msg.channel.send(f"**{assignment_num}** was deleted from the list of classes. You will no longer be able to view or edit it!")
+                        else:
+                            await msg.channel.send("No assignments were deleted.")
+                return
+            # to delete a solution for an assignment
+            if delete_choice == "A solution to an assignment":
                 if not (self.add_class.solutions_path/self.guild_id).exists():
                     # if no solutions have been added for any class, AKA there's nothing to delete
                     await msg.channel.send("There are no solutions to delete yet.")
@@ -514,7 +656,7 @@ class Assignment_Command(Bot_Command):
                         if solution_choice == None:
                             return
                         # ask user for confirmation to delete their solution
-                        await msg.channel.send(f"Delete your solution called **{solution_choice}** from **{assignment_solution_folder}**?")
+                        await msg.channel.send(f"Delete your solution called **{solution_choice}** from Assignment **{assignment_solution_folder}**?")
                         yes_or_no = ["Yes", "No"]
                         response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "Yes or No?", timeout=30)
                         if response == None:
@@ -534,9 +676,10 @@ class Assignment_Command(Bot_Command):
                     for assignment_num in self.class_info["assignments"]:
                         assignments.append("Assignment " + assignment_num)
                     await msg.channel.send("Which assignment solution do you want to delete?")
-                    assignment_num = await user_select_from_list(msg.channel, assignments, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
-                    if assignment_num == None:
+                    response = await user_select_from_list(msg.channel, assignments, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
+                    if response == None:
                         return
+                    assignment_num = split_args_helper(response)[1]
                     # set solution directory with their assignment choice
                     solution_directory = (self.add_class.solutions_path/self.guild_id/self.name/assignment_num)
                     # if there are no solutions to delete for the chosen assignment
@@ -581,7 +724,7 @@ class Assignment_Command(Bot_Command):
                             delete_empty_directories(solution_directory, self.add_class.solutions_path)
                             await msg.channel.send(f"**{solution_name}** has been removed from **{assignment_num}**!")
                         else:
-                            await msg.channel.send(f"**{solution_name}** was not deleted from **{assignment_num}**.")
+                            await msg.channel.send("No changes were made.")
                         return
                     else:
                         #if there's only one solution added by the solution author
@@ -594,169 +737,130 @@ class Assignment_Command(Bot_Command):
                             delete_empty_directories(solution_directory.parent, self.add_class.solutions_path)
                             await msg.channel.send(f"**{solution_author}'s** solution has been removed from **{assignment_num}**!")
                         else:
-                            await msg.channel.send(f"**{solution_author}'s** solution was not deleted from **{assignment_num}**.")
+                            await msg.channel.send("No changes were made.")
                         return
-            else:
-                print("Getting Solutions")
-                if not (self.add_class.solutions_path / self.guild_id).exists():
-                    await msg.channel.send("There are no assignment solutions added to this server yet!")
+            # to delete notes for a class
+            if delete_choice == "Notes for the class":
+                return
+            # to delete the class syllabus
+            if delete_choice == "The class syllabus":
+                if not msg.author.guild_permissions.administrator:
+                    await msg.channel.send("Error: You cannot use this command since you are not admin!")
                     return
-                solution_choice_list = split_args_helper(solution_choice, True)
-                # user might intuitively try to run the command like this: $211 solution add 1 or $211 solution delete 1
-                # since this is the wrong syntax because assignment number isn't specified with adding or deleting a solution
-                # send a message to let them know the format is wrong
-                if "add" in solution_choice_list:
-                    await msg.channel.send(f"Error: To add a solution to an assignment in the **{self.name}** class. Type **{bot_prefix}{self.name} solution add**")
+                # if the user tries to delete a syllabus that doesn't exist
+                if not (self.syllabus_path/self.guild_id/self.name).exists():
+                    await msg.channel.send(f"Error: There are no syllabuses added to the **{self.name}** class to delete.")
                     return
-                if "delete" in solution_choice_list:
-                    await msg.channel.send(f"Error: To delete a solution to an assignment in the **{self.name}** class. Type **{bot_prefix}{self.name} solution delete**")
+                # otherwise, set a directory to access the syllabus file
+                syllabus_path = (self.syllabus_path/self.guild_id/self.name)
+                # confirm with user about deleting the syllabus
+                await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE THE SYLLABUS FOR THE CLASS__   {self.name}   __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
+                yes_or_no = ["Yes", "No"]
+                response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                if response == "Yes":
+                    # if user confirms, delete directory and all parent directories
+                    shutil.rmtree(syllabus_path)
+                    delete_empty_directories(syllabus_path, self.add_class.solutions_path)
+                    await msg.channel.send(f"{self.name} Syllabus deleted.")
                     return
-                for assignment_num in solution_choice_list.copy():
-                    solution_directory = (self.add_class.solutions_path / self.guild_id / self.name / assignment_num)
-                    # if an assignment doesn't exist in the specified class i.e 211 or 212
-                    if assignment_num not in self.class_info["assignments"]:
-                        # let user know assignment doesn't exist
-                        await msg.channel.send(f"Assignment **{assignment_num}** does not exist!")
-                        solution_choice_list.remove(assignment_num)
-                        continue
-                    # if the solution to an assignment doesn't exist, remove it from the solution_choice_list
-                    if not solution_directory.exists() or not any(solution_directory.iterdir()):
-                        await msg.channel.send(f"There are no solutions for Assignment **{assignment_num}** yet!")
-                        solution_choice_list.remove(assignment_num)
-                # go through each solution in the each assignment's directory
-                for assignment_num in solution_choice_list:
-                    solution_directory = (self.add_class.solutions_path / self.guild_id / self.name / assignment_num)
-                    username_list = []
-                    user_id_list = []
-                    # do the same thing with names and user ID's as mentioned above when deleting solutions
-                    for user_id in solution_directory.iterdir():
-                        member = msg.guild.get_member(int(user_id.name))
-                        username_list.append(str(member))
-                        user_id_list.append(user_id.name)
-                    await msg.channel.send(f"Whose solution do you want to view for Assignment **{assignment_num}**?")
-                    solution_author = await user_select_from_list(msg.channel, username_list, lambda x: x, msg.author, "", 30)
-                    if solution_author == None:
-                        return
-                    user_id = user_id_list[username_list.index(solution_author)]
-                    # set a new directory
-                    solution_directory = solution_directory/user_id
-                    # get a list of all solutions added by the solution_author
-                    solutions_list = []
-                    for solution_folder in solution_directory.iterdir():
-                        solutions_list.append(solution_folder.name)
-                    # if the solution_author has uploaded multiple solution versions ask which one to view
-                    if len(solutions_list) > 1:
-                        await msg.channel.send(f"**{solution_author}** has uploaded multiple solution versions for Assignment {assignment_num}. Which version do you want to view?")
-                        solution_version = await user_select_from_list(msg.channel, solutions_list, lambda x: x, msg.author, "", 30)
-                        if solution_version == None:
+                else:
+                    # otherwise do nothing
+                    await msg.channel.send("No changes were made.")
+                    return
+            # to delete a link from an assignment
+            if delete_choice == "A helpful or relevant link for an assignment":
+                # to remove a link from the relevant links list
+                # must have admin permissions
+                if not msg.author.guild_permissions.administrator:
+                    await msg.channel.send(
+                        "Error: You cannot use this command since you are not admin!"
+                    )
+                    return
+                assignments_list = []
+                for assignment_num in sorted(
+                    self.class_info["assignments"].keys(), key=lambda num: int(num)
+                ):
+                    # adds sorted numbers to a list
+                    assignments_list.append(f"Assignment {assignment_num} - [{self.class_info['assignments'][assignment_num]['title']}]({self.class_info['assignments'][assignment_num]['url']})")
+                # if there are no assignments for that class (i.e nothing in assignments_list), send a message
+                if len(assignments_list) == 0:
+                    await msg.channel.send(
+                        f"There are no assignments added for class **{self.name}**"
+                    )
+                    return
+                await msg.channel.send("For which assignment do you want to delete a link from?")
+                response = await user_select_from_list(msg.channel, assignments_list, lambda x: x, msg.author, f"{self.name} Assignments", 30)
+                if response == None:
+                    return
+                assignment_num = split_args_helper(response)[1]
+                relevant_links = self.class_info["assignments"][assignment_num]["relevant_links"]
+                urls = []
+                # goes through each relevant link and then displays it in a seperate embed message
+                for url in relevant_links:
+                    urls.append(f"{url['title']} - {url['url']}")
+                # if there are no urls
+                if not urls:
+                    await msg.channel.send("There are no links added to this assignment for you to delete!")
+                    return
+                await msg.channel.send("Which link do you want to delete?")
+                response = await user_select_from_list(msg.channel, urls, lambda x: x, msg.author, f"Assignment {assignment_num} Relevant Links", 30)
+                title = relevant_links[urls.index(response)]["title"]
+                # loops through list
+                for i in self.class_info["assignments"][assignment_num][
+                    "relevant_links"
+                ]:
+                    # if it finds a matching title
+                    if title == i["title"]:
+                        #confirm deletion with user
+                        await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE THE LINK NAMED:__   {title}   __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
+                        yes_or_no = ["Yes", "No"]
+                        response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                        if response == "Yes":
+                            # remove it form the list
+                            self.class_info["assignments"][assignment_num]["relevant_links"].remove(i)
+                            # confirm that a match was found and was deleted
+                            await msg.channel.send(
+                                f"Removed **{i['title']}** from Relevant Links"
+                            )
+                            # save JSON File
+                            self.add_class.save_assignments(self.guild_id)
                             return
-                        await msg.channel.send(f"Here are all the files in the **{solution_version}** folder")
-                        for solution_file in (solution_directory/solution_version).iterdir():
-                            with solution_file.open("rb") as download_file:
-                                await msg.channel.send(file=discord.File(download_file, solution_file.name))
-                    # if the solution_author has uploaded one solution verson, send the files in it to the server to download
-                    else:
-                        await msg.channel.send(f"Here are the solution files **{solution_author}** submitted for Assignment {assignment_num}.")
-                        for solution_file in (solution_directory/solutions_list[0]).iterdir():
-                            with solution_file.open("rb") as download_file:
-                                await msg.channel.send(file=discord.File(download_file, solution_file.name))
-                return
-        # to add an assignment to a class
-        # $211 add 1
-        elif args.casefold().startswith("add "):
-            # if the the user is not an admin/has admin permissions
-            if not msg.author.guild_permissions.administrator:
-                await msg.channel.send(
-                    "Error: You cannot use this command since you are not admin!"
-                )
-                return
-            # get the number of the assignment they want to add by getting everything after "add"
-            assignment_num = args[len("add") :].strip()
-            # checks if the assignment they want to add is a number (i.e number of the assignment)
-            if not assignment_num.isdigit():
-                await msg.channel.send(
-                    "Error: You must provide the number for the assignment you are trying to add! Example: $211 add **10** or $220 add **7**"
-                )
-                return
-            elif len(assignment_num) > 10:
-                await msg.channel.send("Error: Assignment number can't be more than 10 digits!")
-                return
-            # checks to see if the assignment number already exists in the assignments list
-            if assignment_num in self.class_info["assignments"]:
-                await msg.channel.send(format_max_len_string("Error: This assignment already exists! Type **$ {} {}** to view it.", self.name, assignment_num)
-                )
-                return
-            # if it doesn't exist in the assignments list, we create it
-            if assignment_num not in self.class_info["assignments"]:
-                # this is the standard layout of every assignment
-                new_assignment = {
-                    "title": "",
-                    "url": "",
-                    "description": "",
-                    "relevant_links": [],
-                    "requested_urls": [],
-                }
-                # go through each key (i.e "title", "url", "description", etc) but only
-                # 3 times so that they can't add a relevant link or add a requested url straight away
-                key_counter = 0
-                for key in new_assignment:
-                    if key_counter == 3:
-                        break
-                    await msg.channel.send(f"Please enter a {key} for this assignment")
-                    # get their input for either title, url or description
-                    key_value = await wait_for_reply(msg.author, msg.channel, timeout=300)
-                    key_value = key_value.content
-                    if key_value == None:
-                        return
-                    # if they are setting a title (i.e key_counter == 0)
-                    if key_counter == 0 and len(key_value) > 100:
-                    #if the title is longer than 100 characters, send an error message
-                        await msg.channel.send(
-                            "Error: Title cannot be more than 100 characters"
-                        )
-                        return
-                    # if they are making a url (i.e key_counter == 1) check to see if the link is valid
-                    if key_counter == 1:
-                        key_value = await link_check(key_value, msg)
-                        if key_value == "stop":
+                        else:
+                            await msg.channel.send("No changes were made.")
                             return
-                    # if they are making a url (i.e key_counter == 2)
-                    # set their edits to what they wanted to edit if it passes all tests
-                    new_assignment[key] = key_value
-                    key_counter += 1
-                # save assignments to update the JSON file in real time
-                self.class_info["assignments"][assignment_num] = new_assignment
-                self.add_class.save_assignments(self.guild_id)
-                await msg.channel.send(
-                    f"Done! You can view the added assignment by typing **${self.name} {assignment_num}**. If you want to edit this assignment in case you made a mistake, type **${self.name} edit {assignment_num}**."
-                )
-                return
 
-        # allows admin/user with admin permissions to edit assignments without having to open the JSON file (i.e in discord)
-        # 211 edit 1
-        elif args.casefold().startswith("edit "):
-            # if the user is not an admin/has admin permissions
+                await msg.channel.send(
+                    f"Error: **{title}** not found in Relevant Links. This feature is case sensitive. Make sure you typed the title exactly as it is"
+                )
+                return
+        elif args.casefold() == "edit":
             if not msg.author.guild_permissions.administrator:
-                await msg.channel.send(
-                    "Error: You cannot use this command since you are not admin!"
-                )
+                await msg.channel.send("Error: You cannot use this command since you are not admin!")
                 return
-            # get the number of the assignment they want to add by getting everything after "add"
-            assignment_num = args[len("edit") :].strip()
-            # checks if the assignment they want to edit is a number (i.e number of the assignment)
-            if not assignment_num.isdigit():
-                await msg.channel.send(
-                    "Error: You must provide the number for the assignment you are trying to edit! Example: $211 edit **10** or $220 edit **7**"
-                )
+            await msg.channel.send("What would you like to edit?")
+            edit_options = ["An assignment"]
+            edit_choice = await user_select_from_list(msg.channel, edit_options, lambda x: x, msg.author, "Edit Options", 30)
+            if edit_choice == None:
                 return
-            # if the assignment does not exist in that class (i.e they can't edit it)
-            if assignment_num not in self.class_info["assignments"]:
-                await msg.channel.send(
-                    "Error: The assignment you are trying to edit has not been added yet!"
-                )
-                return
-            # if the assignment exists in the class, ask what they want to edit (Note* users can only edit either the title, url or description of an assignment)
-            if assignment_num in self.class_info["assignments"]:
+            # to edit the title, url, or description of an assignment
+            if edit_choice == "An assignment":
+                assignments_list = []
+                for assignment_num in sorted(
+                    self.class_info["assignments"].keys(), key=lambda num: int(num)
+                ):
+                    # adds sorted numbers to a list
+                    assignments_list.append(f"Assignment {assignment_num} - [{self.class_info['assignments'][assignment_num]['title']}]({self.class_info['assignments'][assignment_num]['url']})")
+                # if there are no assignments for that class (i.e nothing in assignments_list), send a message
+                if len(assignments_list) == 0:
+                    await msg.channel.send(
+                        f"There are no assignments added for class **{self.name}**"
+                    )
+                    return
+                await msg.channel.send("Which assignment do you want to edit?")
+                response = await user_select_from_list(msg.channel, assignments_list, lambda x: x, msg.author, f"{self.name} Assignments", 30)
+                if response == None:
+                    return
+                assignment_num = split_args_helper(response)[1]
                 edit_list = ["title", "url", "description"]
                 await msg.channel.send(
                     f"What would you like to edit from **assignment {assignment_num}**?"
@@ -785,6 +889,8 @@ class Assignment_Command(Bot_Command):
                     )
                 # if the new title they are trying to add is more than 100 characters, send an error message
                 edit = await wait_for_reply(msg.author, msg.channel)
+                if edit == None:
+                    return
                 edit = edit.content
                 if edit == "stop":
                     await msg.channel.send("No changes were made.")
@@ -842,35 +948,80 @@ class Assignment_Command(Bot_Command):
                     )
                     return
             return
-        # $211 delete 1, 2, 5
-        elif args.casefold().startswith("delete "):
-            if not msg.author.guild_permissions.administrator:
-                await msg.channel.send(
-                    "Error: You cannot use this command since you are not admin!"
-                )
+        
+        # view a solution to an assignment
+        # 211 solution 1 || $211 solutions 1
+        elif args.casefold().startswith("solution ") or args.casefold().startswith("solutions "):
+            # adding this "if else" because it may be intuitive to type "solutions" when viewing an assignment with multiple solutions
+            if args.casefold().startswith("solution "):
+                solution_choice = args[len("solution") :].strip()
+            else:
+                solution_choice = args[len("solutions") :].strip()
+            print("Getting Solutions")
+            if not (self.add_class.solutions_path / self.guild_id).exists():
+                await msg.channel.send("There are no assignment solutions added to this server yet!")
                 return
-            split_args = args.split(" ", 1)
-            """ split_args[0] = delete
-                split_args[1] = assignments to delete """
-            # get a list of the assignments the user wants to delete
-            assignments_list = split_args_helper(split_args[1], True)
-            for assignment_num in assignments_list:
-                # if an assignment does not exist in the JSON file
-                if assignment_num not in self.class_info["assignments"].keys():
-                    await msg.channel.send(f"Assignment **{assignment_num}** does not exist in the {self.name} class.")
+            solution_choice_list = split_args_helper(solution_choice, True)
+            # user might intuitively try to run the command like this: $211 solution add 1 or $211 solution delete 1
+            # since this is the wrong syntax because assignment number isn't specified with adding or deleting a solution
+            # send a message to let them know the format is wrong
+            if "add" in solution_choice_list:
+                await msg.channel.send(f"Error: To add a solution to an assignment in the **{self.name}** class. Type **{bot_prefix}{self.name} solution add**")
+                return
+            if "delete" in solution_choice_list:
+                await msg.channel.send(f"Error: To delete a solution to an assignment in the **{self.name}** class. Type **{bot_prefix}{self.name} solution delete**")
+                return
+            for assignment_num in solution_choice_list.copy():
+                solution_directory = (self.add_class.solutions_path / self.guild_id / self.name / assignment_num)
+                # if an assignment doesn't exist in the specified class i.e 211 or 212
+                if assignment_num not in self.class_info["assignments"]:
+                    # let user know assignment doesn't exist
+                    await msg.channel.send(f"Assignment **{assignment_num}** does not exist!")
+                    solution_choice_list.remove(assignment_num)
+                    continue
+                # if the solution to an assignment doesn't exist, remove it from the solution_choice_list
+                if not solution_directory.exists() or not any(solution_directory.iterdir()):
+                    await msg.channel.send(f"There are no solutions for Assignment **{assignment_num}** yet!")
+                    solution_choice_list.remove(assignment_num)
+            # go through each solution in the each assignment's directory
+            for assignment_num in solution_choice_list:
+                solution_directory = (self.add_class.solutions_path / self.guild_id / self.name / assignment_num)
+                username_list = []
+                user_id_list = []
+                # do the same thing with names and user ID's as mentioned above when deleting solutions
+                for user_id in solution_directory.iterdir():
+                    member = msg.guild.get_member(int(user_id.name))
+                    username_list.append(str(member))
+                    user_id_list.append(user_id.name)
+                await msg.channel.send(f"Whose solution do you want to view for Assignment **{assignment_num}**?")
+                solution_author = await user_select_from_list(msg.channel, username_list, lambda x: x, msg.author, "", 30)
+                if solution_author == None:
+                    return
+                user_id = user_id_list[username_list.index(solution_author)]
+                # set a new directory
+                solution_directory = solution_directory/user_id
+                # get a list of all solutions added by the solution_author
+                solutions_list = []
+                for solution_folder in solution_directory.iterdir():
+                    solutions_list.append(solution_folder.name)
+                # if the solution_author has uploaded multiple solution versions ask which one to view
+                if len(solutions_list) > 1:
+                    await msg.channel.send(f"**{solution_author}** has uploaded multiple solution versions for Assignment {assignment_num}. Which version do you want to view?")
+                    solution_version = await user_select_from_list(msg.channel, solutions_list, lambda x: x, msg.author, "Solution Versions", 30)
+                    if solution_version == None:
+                        return
+                    await msg.channel.send(f"Here are all the files in the **{solution_version}** folder")
+                    for solution_file in (solution_directory/solution_version).iterdir():
+                        with solution_file.open("rb") as download_file:
+                            await msg.channel.send(file=discord.File(download_file, solution_file.name))
+                # if the solution_author has uploaded one solution verson, send the files in it to the server to download
                 else:
-                    # confirm deletion of assignment with user
-                    await msg.channel.send(f"⚠️ **__ARE YOU SURE YOU WANT TO DELETE THE ASSIGNMENT__   {assignment_num}   __FROM THE {self.name} CLASS? THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__** ⚠️")
-                    yes_or_no = ["Yes", "No"]
-                    response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
-                    if response == "Yes":
-                        # if user cofirms, delete assignment from the JSON file, otherwise just do nothing
-                        del self.class_info["assignments"][assignment_num]
-                        self.add_class.save_assignments(self.guild_id)
-                        await msg.channel.send(f"**{assignment_num}** was deleted from the list of classes. You will no longer be able to view or edit it!")
-                    else:
-                        await msg.channel.send("No assignments were deleted.")
+                    await msg.channel.send(f"Here are the solution files **{solution_author}** submitted for Assignment {assignment_num}.")
+                    for solution_file in (solution_directory/solutions_list[0]).iterdir():
+                        with solution_file.open("rb") as download_file:
+                            await msg.channel.send(file=discord.File(download_file, solution_file.name))
             return
+           
         # Send a list of all existing/added assignments for the class (self.name) listed in self.class_info["assignments"]
         # Syntax: $211 assignments
         elif args.casefold() == "assignments":
@@ -898,10 +1049,10 @@ class Assignment_Command(Bot_Command):
             )
             await msg.channel.send(embed=assignments_embed)
 
-        # add, delete or view syllabus for a class
+        # get the syllabus for a class
+        # $211 syllabus
         elif args.casefold().startswith("syllabus"):
             print(args)
-            # $211 syllabus
             if args.casefold() == "syllabus":
                 # next() returns the next item in an iterator, in this case the next thing in the directory which is the syllabus file
                 with next((self.syllabus_path/self.guild_id/self.name).iterdir()).open("rb") as download_file:
@@ -909,77 +1060,14 @@ class Assignment_Command(Bot_Command):
                     await msg.channel.send(file=discord.File(download_file, download_file.name))
                 return
             args = args[len("syllabus") :].strip()
-            # $211 syllabus add
-            if args.casefold() == "add":
-                # set a directory to store the syllabus in
-                syllabus_path = (self.syllabus_path/self.guild_id/self.name)
-                # check if the directory already exists i.e syllabus already added to that class
-                if syllabus_path.exists():
-                    await msg.channel.send(f"The syllabus to the {self.name} class has already been added. To view it type **{bot_prefix}{self.name} syllabus**. To delete it type **{bot_prefix}{self.name} syllabus delete**")
-                    return
-                # otherwise, create the directory
-                syllabus_path.mkdir(parents = True)
-                # while True loop to give user chance to retry incase of error
-                # i.e no attachments given, more than one attachment given or attachment size is 0 bytes.
-                while True:
-                    await msg.channel.send("Please submit the syllabus as a file or type **Stop** to exit the command")
-                    syllabus = await wait_for_reply(msg.author, msg.channel)
-                    if syllabus.content.casefold() == "stop":
-                        delete_empty_directories(syllabus_path, self.syllabus_path)
-                        await msg.channel.send("No changes were made.")
-                        return
-                    if not syllabus.attachments:
-                        await msg.channel.send("No attachments given!")
-                        continue
-                    if len(syllabus.attachments) > 1:
-                        await msg.channel.send("You may only attach one file!")
-                        continue
-                    if syllabus.attachments[0].size == 0:
-                        await msg.channel.send(f"**{syllabus.attachments[0].filename}** is an empty file!")
-                        continue
-                    else:
-                        break
-                # confirm with user if file is valid and correct
-                confirm_or_deny = ["Confirm", "Deny"]
-                await msg.channel.send(f"Please confirm that **{syllabus.attachments[0].filename}** is the correct syllabus for the **{self.name}** class!")
-                response = await user_select_from_list(msg.channel, confirm_or_deny, lambda x: x, msg.author, "", 30)
-                if response == "Confirm":
-                    # if user confirms, add file to directory
-                    await syllabus.attachments[0].save(syllabus_path/f"{syllabus.attachments[0].filename}")
-                    await msg.channel.send("Syllabus has been added!")
-                else:
-                    # otherwise, delete the directory and all of its parents
-                    delete_empty_directories(syllabus_path, self.syllabus_path)
-                    await msg.channel.send("No changes were made.")
-                return
-            # $211 syllabus delete
-            elif args.casefold() == "delete":
-                # if the user tries to delete a syllabus that doesn't exist
-                if not (self.syllabus_path/self.guild_id/self.name).exists():
-                    await msg.channel.send(f"Error: There are no syllabuses added to the **{self.name}** class to delete.")
-                    return
-                # otherwise, set a directory to access the syllabus file
-                syllabus_path = (self.syllabus_path/self.guild_id/self.name)
-                # confirm with user about deleting the syllabus
-                await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE THE SYLLABUS FOR THE CLASS__   {self.name}   __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
-                yes_or_no = ["Yes", "No"]
-                response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
-                if response == "Yes":
-                    # if user confirms, delete directory and all parent directories
-                    shutil.rmtree(syllabus_path)
-                    delete_empty_directories(syllabus_path, self.add_class.solutions_path)
-                    await msg.channel.send(f"{self.name} Syllabus deleted.")
-                    return
-                else:
-                    # otherwise do nothing
-                    await msg.channel.send("No changes were made.")
-                    return
+                
         # if they try to view an assignment or class that doesnt exist
         # $211 %^7 or $lmao 69
         else:
             await msg.channel.send(
                 "Error: Either you typed in a command wrong, or the assignment you are looking for does not exist or has not yet been added to the bot. If this is the case, ping a mod.\nYou can use $[class_name] to get help with how to use this command. Example **$211** or **$212**"
             )
+            return
 
 # creates the command for every class dictionary (211 or 212) thats in the JSON File
 class addClass(Bot_Command):
@@ -1108,6 +1196,8 @@ class addClass(Bot_Command):
                     return
                 await msg.channel.send(f"Please enter {professor.content}'s website for the **{class_name}** class. If the professor does not have a website, type **None**.")
                 website = await wait_for_reply(msg.author, msg.channel)
+                if website == None:
+                    return
                 if website.content.casefold() == "none":
                     website = None
                 else:
