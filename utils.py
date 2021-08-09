@@ -695,28 +695,91 @@ async def user_select_from_list(
 async def wait_for_reply(
     member: discord.Member,
     channel: discord.TextChannel,
+    message: Optional[discord.Message] = None,
     timeout: Optional[float] = 60,
     error_message: Optional[str] = "Error: You took too long to respond",
 ) -> Optional[str]:
-    """Gets the message content of the next message sent by `member` in
-    `channel`. If no response is received in `timeout` seconds, `error_message`
+    """Waits for a reply from `member` by getting their next message sent
+    in `channel` and returns it. Waiting for a response is cancelled and
+    `None` is returned if `member` reacts to `message` with ❌.
+    If no response is received in `timeout` seconds, `error_message`
     is sent to `channel` if it is not `None` and the function returns `None`.
+
+    Parameters
+    ----------
+    member: discord.Member
+    The member to wait for a reply or reaction from.
+
+    channel: discord.TextChannel
+    The channel where the `options` will be sent to be chosen from.
+
+    message: Optional[discord.Message]
+    The message that `member` should react to in order to cancel reply request.
+    If `message` is `None`, the reply request cannot be cancelled and will only
+    wait for a message.
+
+    timeout: Optional[float]
+    How long in seconds the function should wait for a message or reaction 
+    from `member` before timing out and returning `None`.
+
+    error_message: Optional[str]
+    The message sent to `channel` if the function times out waiting for a user event.
     """
-    try:
-        response = await client.wait_for(
-            "message",
-            check=lambda m: m.author == member and m.channel == channel,
-            timeout=timeout,
+
+    tasks = [
+        asyncio.create_task(
+            client.wait_for(
+                "message",
+                check=lambda m: m.author == member
+                and m.channel == channel,
+                timeout=timeout
+            ), 
+            name="response"
         )
-        print(type(response))
-        return response
+    ]
+
+    if message is not None:
+        _cancel_emoji = "❌"
+        await message.add_reaction(_cancel_emoji)
+        tasks.append(
+            asyncio.create_task(
+                client.wait_for(
+                    "reaction_add",
+                    check=lambda r, u: r.message == message
+                    and r.emoji == _cancel_emoji and u == member,
+                    timeout=timeout
+                ),
+                name="reaction"
+            )
+        )
+
+    try:
+        #wait for the first task to be completed by the user
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        #get the completed task
+        event = list(done)[0]
+        #cancel any other pending tasks
+        for task in pending:
+            try:
+                task.cancel()
+            except asyncio.CancelledError:
+                print(f"Error cancelling {task}")
+        #if member reacted, cancel reply request and return None
+        if event.get_name() == "reaction":
+            await message.clear_reactions()
+            await channel.send("Request cancelled")
+            return None
+        #if member replied, return response
+        if event.get_name() == "response":
+            response = event.result()
+            return response
+        print(event)
+        return None
+    #if function times out waiting for user
     except asyncio.TimeoutError:
-        # if no response is given within 60 seconds
         if error_message is not None:
             await channel.send(error_message)
         return None
-        # To get just the message of the response, after you call this function just set your variable = to variable.content
-        # This function returns all data of the message such as time/date, id number, etc.
 
 
 _re_arg_splitter = re.compile(
