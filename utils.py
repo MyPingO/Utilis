@@ -4,7 +4,17 @@ import discord
 import asyncio
 import math
 import re
-from typing import Callable, Iterable, Union, Optional, Sequence, TypeVar
+from typing import (
+    Callable,
+    Generic,
+    Iterable,
+    Iterator,
+    Optional,
+    overload,
+    Sequence,
+    TypeVar,
+    Union,
+)
 
 T = TypeVar("T")
 
@@ -342,9 +352,13 @@ async def get_member(
     if not allow_multiple_matches:
         return None
 
-    member_option_generator = (
-        lambda m: f"{m.name}#{m.discriminator}{f' ({m.nick})' if m.nick else ''}"
-    )
+    # FIXME: incompatible type "Callable[[Member], str]"; expected "Callable[[Optional[Member]], str]"
+    def member_option_generator(m: discord.Member) -> str:
+        ret = f"{m.name}#{m.discriminator}"
+        if m.nick:
+            ret += f" ({m.nick})"
+        return ret
+
     if timeout is None:
         return await user_select_from_list(
             channel,
@@ -582,114 +596,6 @@ async def get_role(
             title="Select role:",
             timeout=timeout,
         )
-
-
-async def user_select_from_list(
-    channel: discord.TextChannel,
-    options: Sequence[T],
-    option_text_generator: Callable[[T], str],
-    responder: Optional[discord.Member] = None,
-    title: Optional[str] = None,
-    timeout: Optional[float] = 60,
-) -> Optional[T]:
-    """Sends a numbered list of options to be chosen from in a channel. If
-    `responder` is not `None`, that member will then be able to choose one of
-    the options provided in `options` by sending the number corresponding to
-    that option. If `responder` is `None`, anyone in `channel` will be able to
-    make a selection from `options` by sending a number in `channel`.
-    Returns an option from `options` if an option from the list was selected or
-    `None` if the function times out waiting for a selection.
-
-    Parameters
-    -----------
-    channel: discord.TextChannel
-    The channel where the `options` will be sent to be chosen from.
-
-    options: Sequence[T]
-    The options that will be chosen from.
-
-    option_text_generator: Callable[[T], str]
-    A function to convert an option from `options` to a string representation
-    that can be sent in a message to `channel` to be chosen from by a user.
-
-    responder: discord.Member
-    If `responder` is not `None`, then `responder` will be mentioned in the
-    message asking for a selection to be made from `options`, and only
-    `responder` will be able to make a selection. If `responder` is `None`,
-    anyone who can send messages in `channel` will be able to make a selection
-    from `options`.
-
-    title: Optional[str]
-    The message included at the top of the message asking for a selection to be
-    made.
-
-    timeout: Optional[float]
-    How long in seconds the function should wait for a selection from `options`
-    before timing out and returning `None`.
-    """
-
-    message_text = responder.mention if responder else ""
-    message_embed = discord.Embed(title=title)
-
-    choice_messages = []
-
-    for index, item in enumerate(options):
-        name = str(index + 1)
-        value = option_text_generator(item)
-
-        if len(message_embed) + len(name + value) > 6000:
-            choice_messages.append(
-                await channel.send(message_text, embed=message_embed)
-            )
-            message_embed = discord.Embed(title=title)
-
-        message_embed.add_field(name=name, value=value, inline=False)
-
-    if responder is not None:
-        check_user_int_response = (
-            lambda x: x.channel == channel
-            and x.author == responder
-            and x.content.isdigit()
-        )
-    else:
-        check_user_int_response = (
-            lambda x: x.channel == channel
-            and x.author != client.user
-            and x.content.isdigit()
-        )
-
-    choice_messages.append(await channel.send(message_text, embed=message_embed))
-
-    # Loop until a valid selection is made or the function times out waiting
-    # for a selection.
-    while True:
-        response = None
-        try:
-            response = await client.wait_for(
-                "message",
-                check=check_user_int_response,
-                timeout=timeout,
-            )
-        except asyncio.TimeoutError:
-            await channel.delete_messages(choice_messages)
-            await channel.send(
-                "Error: Timed out waiting for user input.", delete_after=20
-            )
-            return None
-
-        int_response = int(response.content)
-        if int_response <= len(options) and int_response > 0:
-            await channel.delete_messages(choice_messages)
-            try:
-                await response.delete()
-            except discord.NotFound:
-                pass
-            return options[int_response - 1]
-        else:
-            error_message = format_max_len_string(
-                "Option `{}` is out of bounds. Please try again!", response.content
-            )
-            await channel.send(error_message, delete_after=7)
 
 
 async def wait_for_reply(
@@ -958,15 +864,16 @@ class Multi_Page_Embed_Message:
     The message that the multi page embed was sent to. `None` if the message
     has not been sent yet. May also be `None` if the message has been deleted.
 
-    page_turner: Optional[Union[discord.User, discord.Member]]
-    The user that can turn the pages of the embed. If `page_turner` is `None`
+    responder: Optional[Union[discord.User, discord.Member]]
+    The user that can turn the pages of the embed. If `responder` is `None`
     then any user can turn the pages.
     """
 
     page: Optional[int]
     pages: list[discord.Embed]
     msg: Optional[discord.Message]
-    page_turner: Optional[Union[discord.User, discord.Member]]
+    responder: Optional[Union[discord.User, discord.Member]]
+    _continue: bool = False
 
     _larrow = "⬅️"
     _rarrow = "➡️"
@@ -974,7 +881,7 @@ class Multi_Page_Embed_Message:
     def __init__(
         self,
         embeds: list[discord.Embed],
-        page_turner: Optional[Union[discord.User, discord.Member]],
+        responder: Optional[Union[discord.User, discord.Member]],
         embed_editor: Optional[
             Callable[
                 [discord.Embed, "Multi_Page_Embed_Message"], Optional[discord.Embed]
@@ -989,8 +896,8 @@ class Multi_Page_Embed_Message:
         embeds: list[discord.Embed]
         The embeds to cycle between in the message.
 
-        page_turner: Optional[Union[discord.User, discord.Member]]
-        The user that can turn pages in the embed. If `page_turner` is
+        responder: Optional[Union[discord.User, discord.Member]]
+        The user that can turn pages in the embed. If `responder` is
         `None` then any user can turn pages.
 
         embed_editor: Optional[
@@ -1002,8 +909,8 @@ class Multi_Page_Embed_Message:
         display in the image. If `embed_editor` is or returns `None` then no
         changes will be made to the message after it becomes inactive.
         """
-        self.page_turner = page_turner
-        self.page = None
+        self.responder = responder
+        self.page = 0
         self.msg = None
         self.pages = embeds
         self._embed_editor = embed_editor
@@ -1011,7 +918,7 @@ class Multi_Page_Embed_Message:
     async def send(
         self,
         channel: discord.abc.Messageable,
-        page_turn_timeout: float = 180,
+        timeout: float = 180,
         blocking: bool = False,
     ) -> None:
         """Sends the multi page embed to `channel`.
@@ -1021,9 +928,9 @@ class Multi_Page_Embed_Message:
         channel: discord.abc.Messageable
         The channel to send the multi page embed to.
 
-        page_turn_timeout: float
+        timeout: float
         How long in seconds until the multi page embed's pages can no longer
-        be cycled. Turning a page resets the timer to `page_turn_timeout`
+        be cycled. Turning a page resets the timer to `timeout`
         again.
 
         blocking: bool
@@ -1034,10 +941,17 @@ class Multi_Page_Embed_Message:
             self.page = 0
             self.msg = await channel.send(embed=self.pages[self.page])
             if len(self.pages) > 1:
+                self._continue = True
                 if blocking:
-                    await self._wait_for_page_turn(page_turn_timeout)
+                    await self._main_loop(timeout)
                 else:
-                    asyncio.ensure_future(self._wait_for_page_turn(page_turn_timeout))
+                    asyncio.ensure_future(self._main_loop(timeout))
+            else:
+                self._continue = False
+
+    async def delete(self) -> None:
+        if self.msg is not None:
+            await self.msg.delete()
 
     @staticmethod
     def embed_list_from_items(
@@ -1045,7 +959,7 @@ class Multi_Page_Embed_Message:
         title_generator: Optional[Callable[[int], Optional[str]]],
         description_generator: Optional[Callable[[int], Optional[str]]],
         field_generator: Callable[[T], tuple[str, str, bool]],
-        page_turner: Optional[Union[discord.User, discord.Member]],
+        responder: Optional[Union[discord.User, discord.Member]],
         *,
         description_on_every_page: bool = True,
         max_field_count: int = 25,
@@ -1084,8 +998,8 @@ class Multi_Page_Embed_Message:
         field's name and value. The third element in the tuple should be a
         boolean controlling whether or not the field should be inline.
 
-        page_turner: Optional[Union[discord.User, discord.Member]]
-        The user that can turn pages in the embed. If `page_turner` is
+        responder: Optional[Union[discord.User, discord.Member]]
+        The user that can turn pages in the embed. If `responder` is
         `None` then any user can turn pages.
 
         max_field_count: int
@@ -1112,7 +1026,7 @@ class Multi_Page_Embed_Message:
         # that exceed the length of this estimate will be shortened to keep
         # the length of embeds within max_embed_len
         sample_footer_len = (
-            len(footer_generator(999, 999, page_turner) or "")
+            len(footer_generator(999, 999, responder) or "")
             if footer_generator is not None
             else 0
         )
@@ -1153,7 +1067,7 @@ class Multi_Page_Embed_Message:
                 embeds.append(embed)
 
             # Add item's field
-            embed.add_field(name=name, value=value, inline=False)
+            embed.add_field(name=name, value=value, inline=inline)
 
         # Add footers to embeds
         if footer_generator is not None:
@@ -1161,7 +1075,7 @@ class Multi_Page_Embed_Message:
                 max_footer_len = max_embed_len - len(page)
                 page_num = index + 1
 
-                footer_text = footer_generator(page_num, len(embeds), page_turner)
+                footer_text = footer_generator(page_num, len(embeds), responder)
 
                 if footer_text is not None:
                     page.set_footer(
@@ -1184,72 +1098,422 @@ class Multi_Page_Embed_Message:
             except discord.HTTPException:
                 self.msg = None
 
-    async def _wait_for_page_turn(self, page_turn_timeout: float):
-        """Handles turning the multi page embed's pages with reactions."""
+    def _reaction_check(
+        self,
+        reaction: discord.Reaction,
+        reactor: Union[discord.User, discord.Member],
+    ) -> bool:
+        """Returns whether or not the embed handles a reaction."""
+        return (
+            reaction.message == self.msg
+            and reaction.emoji in (self._larrow, self._rarrow)
+            and reactor != client.user
+        )
 
+    async def _await_reaction(
+        self, timeout: Optional[float]
+    ) -> tuple[discord.Reaction, Union[discord.User, discord.Member]]:
+        return await client.wait_for(
+            "reaction_add",
+            check=self._reaction_check,
+            timeout=timeout,
+        )
+
+    async def _handle_reaction(
+        self,
+        reaction: discord.Reaction,
+        reactor: Union[discord.User, discord.Member],
+    ) -> None:
+        """Handles reactions for turning pages."""
+
+        if self.msg is None:
+            return
+        if self.responder is None or reactor == self.responder:
+            # Make sure that the reactor is someone who can turn
+            # the page.
+            if self.page is None:
+                self.page = 0
+
+            if reaction.emoji == self._larrow:
+                # Turn page left
+                self.page -= 1
+                if self.page < 0:
+                    # Loop to the last page
+                    self.page = len(self.pages) - 1
+                await self.msg.edit(embed=self.pages[self.page])
+            else:
+                # Turn page right
+                self.page += 1
+                if self.page >= len(self.pages):
+                    # Loop to the first page
+                    self.page = 0
+                await self.msg.edit(embed=self.pages[self.page])
+
+        # Delete reaction whether page turn was successful or not
+        await reaction.remove(reactor)
+
+    def _get_initial_reactions(self) -> list[str]:
+        """Returns the reactions that the bot should add to the message
+        initially.
+        """
+        return [self._larrow, self._rarrow]
+
+    async def _setup(self):
+        # Add reactions for user selection in non-blocking future so that the
+        # bot can begin waiting for and handling reactions without waiting for
+        # every reaction to be added.
+        async def add_reaction(emoji: str):
+            if self.msg is not None and self._continue:
+                await self.msg.add_reaction(emoji)
+
+        async def add_reactions(reactions: list[str]):
+            if self.msg is None or not self._continue:
+                return
+            try:
+                await asyncio.gather(*(add_reaction(emoji) for emoji in reactions))
+            except discord.HTTPException:
+                return
+
+        asyncio.ensure_future(add_reactions(self._get_initial_reactions()))
+
+    async def _cleanup(self):
+        # After timing out waiting for a page to be cycled remove reactions,
+        # update the message's embed and return.
+
+        # Make sure the message still exists.
+        await self._update_msg()
+        if self.msg is not None:
+            # Remove arrow reactions
+            for arrow in (self._larrow, self._rarrow):
+                try:
+                    await self.msg.clear_reaction(arrow)
+                except discord.HTTPException:
+                    pass
+
+            if self._embed_editor is not None and self.page is not None:
+                new_embed = self._embed_editor(self.pages[self.page], self)
+                if new_embed is not None:
+                    await self.msg.edit(embed=new_embed)
+
+    async def _main_loop(self, timeout: float):
+        # Handles turning the multi page embed's pages with reactions.
         self.page = 0
 
         if self.msg is None:
             return
 
-        # Add arrow reactions
-        await self.msg.add_reaction(self._larrow)
-        await self.msg.add_reaction(self._rarrow)
-
+        await self._setup()
         # Keep turning pages until the function times out waiting for a
         # page to be cycled or an exception is thrown.
-        while True:
+        while self._continue:
             try:
-                reaction, reactor = await client.wait_for(
-                    "reaction_add",
-                    # The check function takes the reaction and author
-                    check=lambda r, u: r.message == self.msg
-                    and r.emoji in (self._larrow, self._rarrow)
-                    and u != client.user,
-                    timeout=page_turn_timeout,
-                )
-
-                # Handle reaction
-                if self.page_turner is None or reactor == self.page_turner:
-                    # Make sure that the reactor is someone who can turn
-                    # the page.
-                    if reaction.emoji == self._larrow:
-                        # Turn page left
-                        self.page -= 1
-                        if self.page < 0:
-                            # Loop to the last page
-                            self.page = len(self.pages) - 1
-                        await self.msg.edit(embed=self.pages[self.page])
-                    else:
-                        # Turn page right
-                        self.page += 1
-                        if self.page >= len(self.pages):
-                            # Loop to the first page
-                            self.page = 0
-                        await self.msg.edit(embed=self.pages[self.page])
-
-                # Delete reaction whether page turn was successful or not
-                await reaction.remove(reactor)
-
+                reaction, reactor = await self._await_reaction(timeout)
+                await self._handle_reaction(reaction, reactor)
             except asyncio.TimeoutError:
-                # After timing out waiting for a page to be cycled remove
-                # reactions, update the message's embed and return.
+                self._continue = False
 
-                # Make sure the message still exists.
-                await self._update_msg()
-                if self.msg is not None:
-                    # Remove arrow reactions
-                    try:
-                        await self.msg.clear_reaction(self._larrow)
-                    except discord.HTTPException:
-                        pass
-                    try:
-                        await self.msg.clear_reaction(self._rarrow)
-                    except discord.HTTPException:
-                        pass
+        await self._cleanup()
 
-                    if self._embed_editor is not None and self.page is not None:
-                        new_embed = self._embed_editor(self.pages[self.page], self)
-                        if new_embed is not None:
-                            await self.msg.edit(embed=new_embed)
+
+class User_Selection_Message(Multi_Page_Embed_Message, Generic[T]):
+    """Represents an message that can be used to prompt a user `responder` to
+    select options from a list.
+    """
+
+    selection_reactions = ("1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯", "🇰", "🇱", "🇲", "🇳", "🇴", "🇵", "🇶", "🇷", "🇸", "🇹", "🇺", "🇻", "🇼", "🇽", "🇾", "🇿")  # fmt: skip
+
+    auto_delete_msg: bool
+    get_multiple_selections: bool
+
+    _reaction_mapping: dict[str, T]
+    _selections: Optional[list[T]] = None
+
+    _check = "✅"
+
+    def __init__(
+        self,
+        options: Sequence[T],
+        option_text_generator: Callable[[T], str],
+        responder: Optional[Union[discord.User, discord.Member]],
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        get_multiple_selections: bool = False,
+        auto_delete_msg: bool = True,
+    ):
+        """Parameters
+        -----------
+        options: Sequence[T]
+        The options that will be chosen from.
+
+        option_text_generator: Callable[[T], str]
+        A function to convert an option from `options` to a string
+        representation that can be sent in a message to `channel` to be chosen
+        by a user.
+
+        responder: Optional[Union[discord.User, discord.Member]]
+        If `responder` is not `None`, then `responder` will be mentioned in
+        the message asking for a selection to be made from `options`, and only
+        `responder` will be able to make a selection. If `responder` is `None`,
+        anyone who can send messages in `channel` will be able to make a selection
+        from `options`.
+
+        title: Optional[str]
+        The title for the embeds selection, or no title if `None`.
+
+        description: Optional[str]
+        The description for the embeds being sent. If `None`, a default
+        description will be used.
+
+        get_multiple_selections: bool
+        Whether or not the message should stop waiting for reactions after
+        getting one. If `True`, the message will wait for a check emoji to be
+        added before stopping message collection.
+
+        auto_delete_msg: bool
+        Whether or not the message should be removed from `channel` once
+        `responder` makes their selection(s).
+        """
+        # Make sure options list is valid.
+        if not options:
+            raise ValueError(f"options list can not be empty.")
+        if len(options) > len(self.selection_reactions):
+            raise ValueError(
+                f"options list may have a maximum of {len(self.selection_reactions)} elements."
+            )
+
+        # If no description provided, use a default description.
+        if description is None:
+            if get_multiple_selections:
+                description = f"React to choose the items you wish to select.\nReact with {self._check} once you are done."
+            else:
+                description = "React to choose an item."
+        elif not description:
+            description = None
+
+        # Use a generator to create option embeds.
+        def field_generator() -> Iterator[tuple[str, str, bool]]:
+            for option, emoji in zip(options, self.selection_reactions):
+                yield emoji, option_text_generator(option), True
+
+        fg = field_generator()
+
+        embeds = self.embed_list_from_items(
+            options,
+            lambda pg: title,
+            lambda i: description,
+            lambda option: next(fg),
+            responder,
+        )
+
+        super().__init__(embeds, responder, embed_editor=None)
+
+        self.auto_delete_msg = auto_delete_msg
+        self.get_multiple_selections = get_multiple_selections
+        self._reaction_mapping = {
+            emoji: opt for emoji, opt in zip(self.selection_reactions, options)
+        }
+
+    async def send(
+        self,
+        channel: discord.abc.Messageable,
+        timeout: float = 180,
+        blocking: bool = True,
+    ) -> None:
+        """Parameters
+        -----------TODO
+        channel: discord.abc.Messageable
+        The channel where the `options` will be sent to be chosen from.
+
+        timeout: float
+        How long the message can go without a valid reaction before the
+        message times out and returns `None`. Measured in seconds.
+
+        blocking: bool
+        Must remain `True`.
+        """
+        if not blocking:
+            # TODO: Add support for non-blocking user list selection
+            raise NotImplementedError(
+                "Non-blocking user list selection not implemented."
+            )
+
+        if self.pages:
+            self.page = 0
+            self.msg = await channel.send(embed=self.pages[self.page])
+            self._continue = True
+            await self._main_loop(timeout)
+
+    def get_selections(self) -> Optional[list[T]]:
+        """Return a list of the selections made by `responder`, or `None` if
+        the message timed out waiting for a response.
+        """
+        return self._selections
+
+    async def _find_all_selections(self) -> None:
+        if self.msg is None:
+            return
+        self._selections = []
+
+        async def check_reaction(reaction) -> bool:
+            # Adds valid selections to `self._selections` and returns whether
+            # or not the reaction was a checkmark from `responder`.
+
+            # Check to see if emoji is valid
+            if (
+                reaction.emoji != self._check
+                and reaction.emoji not in self._reaction_mapping.keys()
+            ):
+                return False
+
+            # Check to see if reactor is valid
+            if self.responder is not None:
+                if await reaction.users().get(id=self.responder.id) is None:
+                    return False
+            else:
+                if await reaction.users().find(lambda u: u != client.user) is not None:
+                    return False
+
+            # Handle reaction
+            if reaction.emoji == self._check:
+                return True
+            else:
+                if self._selections is None:
+                    self._selections = []
+                self._selections.append(self._reaction_mapping[reaction.emoji])
+                return False
+
+        has_check = any(
+            await asyncio.gather(*(check_reaction(r) for r in self.msg.reactions))
+        )
+        if self.get_multiple_selections:
+            # If `responder` made valid selections but timed out without
+            # confirming their choices with a check, set selections to `None`
+            if not has_check:
+                self._selections = None
+        else:
+            if not self._selections:
+                # If no selections were made, set `self._selections` to `None`
+                self._selections = None
+
+    def _reaction_check(
+        self,
+        reaction: discord.Reaction,
+        reactor: Union[discord.User, discord.Member],
+    ) -> bool:
+        return (
+            reaction.message == self.msg
+            and reactor != client.user
+            and (
+                reaction.emoji in (self._larrow, self._rarrow, self._check)
+                or reaction.emoji in self._reaction_mapping.keys()
+            )
+        )
+
+    async def _handle_reaction(
+        self,
+        reaction: discord.Reaction,
+        reactor: Union[discord.User, discord.Member],
+    ) -> None:
+        # Handle page turns
+        if len(self.pages) > 1 and super()._reaction_check(reaction, reactor):
+            await super()._handle_reaction(reaction, reactor)
+            return
+
+        if self.responder is None or reactor == self.responder:
+            # Handle checks and selections from responders
+            if self.get_multiple_selections and reaction.emoji == self._check:
+                self._continue = False
                 return
+            if reaction.emoji in self._reaction_mapping.keys():
+                if not self.get_multiple_selections:
+                    self._continue = False
+                    self._selections = [self._reaction_mapping[reaction.emoji]]  # type: ignore
+                return
+
+        # Delete reaction if it was invalid
+        await reaction.remove(reactor)
+
+    def _get_initial_reactions(self) -> list[str]:
+        if len(self.pages) > 1:
+            # Add arrows if pages can be turned
+            ret = super()._get_initial_reactions()
+        else:
+            ret = []
+        if self.get_multiple_selections:
+            ret.append(self._check)
+        ret += list(self._reaction_mapping.keys())[:10]
+        return ret
+
+    async def _cleanup(self):
+        await self._update_msg()
+        if self.get_multiple_selections:
+            await self._find_all_selections()
+        if self.auto_delete_msg:
+            await self.delete()
+
+
+async def user_select_multiple_from_list(
+    channel: discord.abc.Messageable,
+    options: Sequence[T],
+    option_text_generator: Callable[[T], str],
+    responder: Optional[Union[discord.User, discord.Member]],
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    auto_delete_msg: bool = True,
+    timeout: Optional[float] = 60,
+) -> Optional[list[T]]:
+    """Sends a message to `channel` prompting `responder` to choose multiple
+    selections from `options` using reactions. Returns a list of the selected
+    options, or `None` if the function times out waiting for the user to
+    respond. See `User_Selection_Message` for more details on the arguments.
+    """
+    selection_embed = User_Selection_Message(
+        options,
+        option_text_generator,
+        responder,
+        title=title,
+        description=None,
+        get_multiple_selections=True,
+        auto_delete_msg=auto_delete_msg,
+    )
+    if timeout:
+        await selection_embed.send(channel, timeout=timeout)
+    else:
+        await selection_embed.send(channel)
+
+    return selection_embed.get_selections()
+
+
+async def user_select_from_list(
+    channel: discord.abc.Messageable,
+    options: Sequence[T],
+    option_text_generator: Callable[[T], str],
+    responder: Optional[Union[discord.User, discord.Member]],
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    auto_delete_msg: bool = True,
+    timeout: Optional[float] = 60,
+) -> Optional[T]:
+    """Sends a message to `channel` prompting `responder` to choose a
+    selection from `options` using reactions. Returns a the selected option,
+    or `None` if the function times out waiting for the user to respond. See
+    `User_Selection_Message` for more details on the arguments.
+    """
+    selection_embed = User_Selection_Message(
+        options,
+        option_text_generator,
+        responder,
+        title=title,
+        description=None,
+        get_multiple_selections=False,
+        auto_delete_msg=auto_delete_msg,
+    )
+    if timeout:
+        await selection_embed.send(channel, timeout=timeout)
+    else:
+        await selection_embed.send(channel)
+
+    selections = selection_embed.get_selections()
+    if selections is not None:
+        return selections[0]
+    return selections
