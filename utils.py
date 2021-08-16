@@ -353,11 +353,8 @@ async def get_member(
         return None
 
     # FIXME: incompatible type "Callable[[Member], str]"; expected "Callable[[Optional[Member]], str]"
-    def member_option_generator(m: discord.Member) -> str:
-        ret = f"{m.name}#{m.discriminator}"
-        if m.nick:
-            ret += f" ({m.nick})"
-        return ret
+    def member_option_generator(member: discord.Member) -> str:
+        return member.mention
 
     if timeout is None:
         return await user_select_from_list(
@@ -575,9 +572,13 @@ async def get_role(
     if not allow_multiple_matches:
         return None
 
-    role_option_generator = (
-        lambda r: f"{r.name} ({len(r.members)} members with role) [{r.id}]"
-    )
+    # FIXME: incompatible type "Callable[[Role], str]"; expected "Callable[[Optional[Role]], str]"
+    def role_option_generator(role: discord.Role) -> str:
+        ret = f"{role.mention} ({len(role.members)} member"
+        if len(role.members) != 1:
+            ret += 's'
+        ret += f") [{role.id}]"
+        return ret
 
     if timeout is None:
         return await user_select_from_list(
