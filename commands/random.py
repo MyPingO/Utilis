@@ -18,8 +18,6 @@ class Random_Command(Bot_Command):
     `Upper bound`
     """
 
-    category = Bot_Command_Category.TOOLS
-
     args_matcher = re.compile(r"^(\d+)\s+(\d+)$")
 
     async def run(self, msg: discord.Message, args: str):

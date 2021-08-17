@@ -16,8 +16,6 @@ class Coin_Flip_Command(Bot_Command):
     `None`
     """
 
-    category = Bot_Command_Category.MODERATION
-
     async def run(self, msg: discord.Message, args: str):
         choice = f"{random.choice(self.coin)}"
         print(choice)
