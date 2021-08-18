@@ -11,7 +11,7 @@ from pathlib import Path
 
 from core import client
 from bot_cmd import bot_commands
-from utils import roles, format_max_len_string
+from utils import fmt
 
 bot_prefix = "!"
 
@@ -52,6 +52,49 @@ def get_args(content: str, cmd_name: str) -> str:
     Assumes that the bot prefix has been removed.
     """
     return content.strip()[len(cmd_name) :].strip()
+
+
+async def assign_roles(msg: discord.Message):
+    """Adds or removes specified roles from the message author.
+    Multiple roles can be added/removed in one message if they are separated by commas.
+
+    Parameters
+    -----------
+    msg: discord.Message
+    The message containing the roles the author wants to assign or remove from themself.
+    Roles are separated by commas.
+    Role names are preceded by a `+` or `-` to specify whether they should be
+    added or removed.
+    """
+
+    if not isinstance(msg.author, discord.Member):
+        raise TypeError("msg.author must be a member.")
+
+    # split the message into a list of individual roles
+    arr = msg.content.split(", ")
+    for role in arr:
+        # get role name
+        name = role.strip()[1:]
+
+        # determine whether the role should be assigned or removed
+        if role.startswith("+"):
+            try:
+                r = discord.utils.get(msg.author.guild.roles, name=name)
+                if r is not None:
+                    await msg.author.add_roles(r)
+                    return
+            except (discord.HTTPException, discord.Forbidden):
+                pass
+            print(f"no role called {role[1:]}")
+        elif role.startswith("-"):
+            try:
+                r = discord.utils.get(msg.author.guild.roles, name=name)
+                if r is not None:
+                    await msg.author.remove_roles(r)
+                    return
+            except (discord.HTTPException, discord.Forbidden):
+                pass
+            print(f"{msg.author} doesn't have the role {role[1:]}")
 
 
 @client.event
@@ -96,7 +139,7 @@ async def on_message(msg: discord.Message):
                     else:
                         # If the command exists but the member can not run it, send
                         # an error message
-                        error_message = format_max_len_string(
+                        error_message = fmt.format_maxlen(
                             "You do not have permission to run `{}` here.", cmd_name
                         )
                         await msg.channel.send(
@@ -105,7 +148,7 @@ async def on_message(msg: discord.Message):
                         )
                 else:
                     # If the command does not exist, send an error message
-                    error_message = format_max_len_string("No command `{}`", cmd_name)
+                    error_message = fmt.format_maxlen("No command `{}`", cmd_name)
                     await msg.channel.send(
                         error_message,
                         delete_after=7,
@@ -118,7 +161,7 @@ async def on_message(msg: discord.Message):
             # if message has prefix, call roles
             if msg.content.startswith("+") or msg.content.startswith("-"):
                 # assign role
-                await roles(msg)
+                await assign_roles(msg)
 
 
 # allows members to pin messages on their own by reaching a reaction goal

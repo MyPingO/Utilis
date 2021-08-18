@@ -1,5 +1,5 @@
 from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
-from utils import get_member
+from utils import find
 
 import discord
 import re
@@ -36,7 +36,7 @@ class Image_Command(Bot_Command):
     #get the image/gif of an emoji or member avatar and create an embed
     async def get_image_embed(self, item, channel: discord.TextChannel):
         #try to parse the item as a member
-        member = await get_member(channel, item)
+        member = await find.member(channel, item)
         #get the avatar image of the member
         if member is not None:
             #determine how to format the avatar

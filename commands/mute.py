@@ -1,6 +1,6 @@
 from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from pathlib import Path
-from utils import get_member
+from utils import find
 from commands.unmute import unmute
 from main import bot_prefix
 from typing import Optional, Union
@@ -76,7 +76,7 @@ class Mute_Command(Bot_Command):
                     await self.get_info(None, channel, True)
                     return
                 #get the member whose info is being requested
-                member = await get_member(channel, args[5:].strip(), msg.author)
+                member = await find.member(channel, args[5:].strip(), msg.author)
                 if member is None:
                     embed = discord.Embed(
                         title="[ERROR] Not Found",
@@ -90,7 +90,7 @@ class Mute_Command(Bot_Command):
             #muting a single member
             else:
                 #get the member to be muted
-                member = await get_member(channel, m=parsed_args[0], responder=msg.author)
+                member = await find.member(channel, m=parsed_args[0], responder=msg.author)
                 if member is None:
                     print(f"{parsed_args[0]} could not be found")
                     embed = discord.Embed(
@@ -125,7 +125,7 @@ class Mute_Command(Bot_Command):
                 #get the date and time when the server will be unmuted
                 date = self.muted[guild_id]['server']['unmute_at']
                 #get the moderator responsible for the mute
-                mod = await get_member(channel, str(self.muted[guild_id]['server']['by']))
+                mod = await find.member(channel, str(self.muted[guild_id]['server']['by']))
                 embed.set_author(
                     name="[MUTE INFO]",
                     icon_url=mod.avatar_url_as(format='png')
@@ -134,7 +134,7 @@ class Mute_Command(Bot_Command):
                 #get the date and time when this member will be unmuted
                 date = self.muted[guild_id][str(member.id)]['unmute_at']
                 #get the moderator responsible for the mute
-                mod = await get_member(channel, (self.muted[guild_id][str(member.id)]['by']))
+                mod = await find.member(channel, (self.muted[guild_id][str(member.id)]['by']))
                 embed.set_author(
                     name="[MUTE INFO]",
                     icon_url=member.avatar_url_as(format='png')
@@ -285,14 +285,14 @@ class Mute_Command(Bot_Command):
         else:
             #if m is a string try to get the Member object
             if isinstance(m, str):
-                if await get_member(channel, m, responder=author) is None:
+                if await find.member(channel, m, responder=author) is None:
                     print(f"{m} could not be found")
                     embed.title = "[{m}] Not Found"
                     embed.color = discord.Color.blue()
                     await channel.send(embed=embed)
                     return
                 else:
-                    m = await get_member(channel, m, responder=author)
+                    m = await find.member(channel, m, responder=author)
 
             #assign member the mute role
             await m.add_roles(self.role)

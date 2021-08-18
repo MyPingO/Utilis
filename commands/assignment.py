@@ -7,7 +7,9 @@ from commands.help import help_cmd
 from random import choice
 from pathlib import Path
 from random import choice
-from utils import user_select_from_list, user_select_multiple_from_list, wait_for_reply, format_max_len_string, split_args as split_args_helper, delete_empty_directories
+from utils import fmt, get
+from utils.file import delete_empty_directories
+from utils.parse import split_args as split_args_helper
 from typing import Optional
 
 async def link_check(link, msg):
@@ -21,7 +23,7 @@ async def link_check(link, msg):
         return link
     else:
         await msg.channel.send("Please enter a proper link. Example: http://example.com **or** https://example.com\nYou can also type **Stop** to exit the command.")
-        link = await wait_for_reply(msg.author, msg.channel)
+        link = await get.reply(msg.author, msg.channel)
         if link == None:
             link = "stop"
             return link
@@ -96,7 +98,7 @@ class Assignment_Command(Bot_Command):
     # helper function to take a specific answer for reviewing pending links
     async def approve_deny_multiple(self, msg, assignment_num):
         # waits for a response from the command author and channel for 60 seconds
-        response = await wait_for_reply(msg.author, msg.channel)
+        response = await get.reply(msg.author, msg.channel)
         if response == None or response.content.casefold() == "stop":
             await msg.channel.send("No edits were made.")
             return
@@ -201,7 +203,7 @@ class Assignment_Command(Bot_Command):
                 )
                 await msg.channel.send(embed=relevant_links_list)
 
-            
+
 
         # to check whats in queue for specified class (needs to be admin)
         # Syntax: $211 pending 1
@@ -245,12 +247,12 @@ class Assignment_Command(Bot_Command):
 
         # removes a url from the relevant links list for an assignment
         # Syntax: $211 removeurl 1 titl
-            
+
 
         elif args.casefold() == "add":
             await msg.channel.send("What would you like to add?")
             add_options = ["An assignment", "A solution to an assignment", "Notes for the class", "A helpful or relevant link for an assignment", "The class syllabus"]
-            add_choice = await user_select_from_list(msg.channel, add_options, lambda x: x, msg.author, "Add Options", 30)
+            add_choice = await get.selection(msg.channel, add_options, lambda x: x, msg.author, "Add Options", 30)
             if add_choice == None:
                 return
             if add_choice == "An assignment":
@@ -261,7 +263,7 @@ class Assignment_Command(Bot_Command):
                     )
                     return
                 await msg.channel.send("Please enter the class number of the class you want to add")
-                assignment_num = wait_for_reply(msg.author, msg.channel, timeout=30)
+                assignment_num = get.reply(msg.author, msg.channel, timeout=30)
                 if assignment_num == None:
                     return
                 assignment_num = assignment_num.content
@@ -276,7 +278,7 @@ class Assignment_Command(Bot_Command):
                     return
                 # checks to see if the assignment number already exists in the assignments list
                 if assignment_num in self.class_info["assignments"]:
-                    await msg.channel.send(format_max_len_string("Error: This assignment already exists! Type **$ {} {}** to view it.", self.name, assignment_num)
+                    await msg.channel.send(fmt.format_maxlen("Error: This assignment already exists! Type **$ {} {}** to view it.", self.name, assignment_num)
                     )
                     return
                 # if it doesn't exist in the assignments list, we create it
@@ -297,7 +299,7 @@ class Assignment_Command(Bot_Command):
                             break
                         await msg.channel.send(f"Please enter a {key} for this assignment")
                         # get their input for either title, url or description
-                        key_value = await wait_for_reply(msg.author, msg.channel, timeout=300)
+                        key_value = await get.reply(msg.author, msg.channel, timeout=300)
                         if key_value == None:
                             return
                         key_value = key_value.content
@@ -334,7 +336,7 @@ class Assignment_Command(Bot_Command):
                     assignments_list.append("Assignment " + assignment_num)
                 await msg.channel.send("For which assignment do you want to add a solution?")
                 # choose which assignment to add a solution to. If no choice is given, return
-                response = await user_select_from_list(msg.channel, assignments_list, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
+                response = await get.selection(msg.channel, assignments_list, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
                 if response == None:
                     return
                 assignment_num = split_args_helper(response)[1]
@@ -344,7 +346,7 @@ class Assignment_Command(Bot_Command):
                 # while True loop that keeps asking to correct errors if any occur i.e file name exists or ivalid file name
                 # unless user types "stop" in which case, return
                 while True:
-                    solution_name = await wait_for_reply(msg.author, msg.channel)
+                    solution_name = await get.reply(msg.author, msg.channel)
                     if solution_name == None:
                         return
                     if solution_name.content.casefold() == "\stop/":
@@ -366,8 +368,8 @@ class Assignment_Command(Bot_Command):
                 # keep asking for files to add to the solution folder
                 while True:
                     # delete empty folders using delete_empty_directories() if no files given or user is done giving files.
-                    # More info on the function in utils.py
-                    solution = await wait_for_reply(msg.author, msg.channel, timeout = 15)
+                    # More info on the function in utils.file
+                    solution = await get.reply(msg.author, msg.channel, timeout = 15)
                     if solution == None:
                         delete_empty_directories(solution_directory, self.add_class.solutions_path)
                         return
@@ -410,7 +412,7 @@ class Assignment_Command(Bot_Command):
                     confirm_or_deny = ["Confirm", "Deny"]
                     for attachment in solution.attachments:
                         await msg.channel.send(f"Please confirm that **{attachment.filename}** is the correct solution file for Assignment {assignment_num}.")
-                        response = await user_select_from_list(msg.channel, confirm_or_deny, lambda x: x, msg.author, "Confirm or Deny", timeout=30)
+                        response = await get.selection(msg.channel, confirm_or_deny, lambda x: x, msg.author, "Confirm or Deny", timeout=30)
                         # add file to directory if user confirms
                         if response == "Confirm":
                             await attachment.save(solution_directory/f"{attachment.filename}")
@@ -430,13 +432,13 @@ class Assignment_Command(Bot_Command):
                     notes_directory.mkdir(parents = True)
                 if not public_notes_directory.exists():
                     public_notes_directory.mkdir()
-                
+
 
                 await msg.channel.send("Give a name to the folder that will store your notes and try to be descriptive. You can only use numbers and letters! Type **\Stop/** to stop adding notes.")
                 # while True loop that keeps asking to correct errors if any occur i.e file name exists or ivalid file name
                 # unless user types "stop" in which case, return
                 while True:
-                    notes_name = await wait_for_reply(msg.author, msg.channel)
+                    notes_name = await get.reply(msg.author, msg.channel)
                     if notes_name == None:
                         return
                     if notes_name.content.casefold() == "\stop/":
@@ -462,7 +464,7 @@ class Assignment_Command(Bot_Command):
                     counter += 1
                     # delete empty folders using delete_empty_directories() if no files given or user is done giving files.
                     # More info on the function in utils.py
-                    notes = await wait_for_reply(msg.author, msg.channel, timeout = 30)
+                    notes = await get.reply(msg.author, msg.channel, timeout = 30)
                     if notes == None:
                         delete_empty_directories(user_notes_directory, self.add_class.notes_path)
                         delete_empty_directories(public_notes_directory, self.add_class.notes_path)
@@ -508,7 +510,7 @@ class Assignment_Command(Bot_Command):
                         confirm_or_deny = ["Confirm", "Deny"]
                         for attachment in notes.attachments:
                             await msg.channel.send(f"Please confirm that **{attachment.filename}** are the correct notes for the {self.name} class.")
-                            response = await user_select_from_list(msg.channel, confirm_or_deny, lambda x: x, msg.author, "Confirm or Deny", timeout=30)
+                            response = await get.selection(msg.channel, confirm_or_deny, lambda x: x, msg.author, "Confirm or Deny", timeout=30)
                             # add file to directory if user confirms
                             if response == "Confirm":
                                 await attachment.save(user_notes_directory/f"{attachment.filename}")
@@ -525,12 +527,12 @@ class Assignment_Command(Bot_Command):
                         text_notes = notes.content
                         await msg.channel.send("Are you sure this text is correct? You won't be able to edit this text once you have submitted it.")
                         confirm_or_deny = ["Confirm", "Deny"]
-                        response = await user_select_from_list(msg.channel, confirm_or_deny, lambda x: x, msg.author, "Confirm or Deny", timeout=30)
+                        response = await get.selection(msg.channel, confirm_or_deny, lambda x: x, msg.author, "Confirm or Deny", timeout=30)
                         # add file to directory if user confirms
                         if response == "Confirm":
                             await msg.channel.send("Enter a name for your text file. Your name can only contain numbers or letters! Type **\Stop/** to stop adding your file.")
                             while True:
-                                text_file_name = await wait_for_reply(msg.author, msg.channel)
+                                text_file_name = await get.reply(msg.author, msg.channel)
                                 if text_file_name == None:
                                     return
                                 if text_file_name.content.casefold() == "\stop/":
@@ -575,7 +577,7 @@ class Assignment_Command(Bot_Command):
                 # i.e no attachments given, more than one attachment given or attachment size is 0 bytes.
                 while True:
                     await msg.channel.send("Please submit the syllabus as a file or type **Stop** to exit the command")
-                    syllabus = await wait_for_reply(msg.author, msg.channel)
+                    syllabus = await get.reply(msg.author, msg.channel)
                     if syllabus == None:
                         return
                     if syllabus.content.casefold() == "stop":
@@ -596,7 +598,7 @@ class Assignment_Command(Bot_Command):
                 # confirm with user if file is valid and correct
                 confirm_or_deny = ["Confirm", "Deny"]
                 await msg.channel.send(f"Please confirm that **{syllabus.attachments[0].filename}** is the correct syllabus for the **{self.name}** class!")
-                response = await user_select_from_list(msg.channel, confirm_or_deny, lambda x: x, msg.author, "", 30)
+                response = await get.selection(msg.channel, confirm_or_deny, lambda x: x, msg.author, "", 30)
                 if response == "Confirm":
                     # if user confirms, add file to directory
                     await syllabus.attachments[0].save(syllabus_path/f"{syllabus.attachments[0].filename}")
@@ -621,29 +623,29 @@ class Assignment_Command(Bot_Command):
                     )
                     return
                 await msg.channel.send("For which assignment do you want to add a link to?")
-                response = await user_select_from_list(msg.channel, assignments_list, lambda x: x, msg.author, f"{self.name} Assignments", 30)
+                response = await get.selection(msg.channel, assignments_list, lambda x: x, msg.author, f"{self.name} Assignments", 30)
                 if response == None:
                     return
                 assignment_num = split_args_helper(response)[1]
                 await msg.channel.send("Enter the link you want to add for this assignment:")
                 # check if url is a valid url
-                url_add = await link_check(await wait_for_reply(msg.author, msg.channel), msg)
+                url_add = await link_check(await get.reply(msg.author, msg.channel), msg)
                 if url_add == "stop":
                     return
                 await msg.channel.send("Enter a title for this link. **Note** Title cannot be more than 100 characters:")
-                title_add = await wait_for_reply(msg.author, msg.channel)
+                title_add = await get.reply(msg.author, msg.channel)
                 if title_add == None:
                     return
                 title_add = title_add.content
                 while True:
                     if len(title_add) > 100:
                         await msg.channel.send("Title cannot be more than 100 characters! Please enter another title or type **\Stop/** to stop adding a link.")
-                        title_add = await wait_for_reply(msg.author, msg.channel)
+                        title_add = await get.reply(msg.author, msg.channel)
                         if title_add == None:
                             return
                         title_add = title_add.content
                         continue
-                    else: 
+                    else:
                         break
                 # checks for duplicate urls in queue
                 for requested_dict in self.class_info["assignments"][assignment_num][
@@ -704,7 +706,7 @@ class Assignment_Command(Bot_Command):
         elif args.casefold() == "delete":
             await msg.channel.send("What would you like to delete?")
             delete_options = ["An assignment", "A solution to an assignment", "Notes for the class", "A helpful or relevant link for an assignment", "The class syllabus"]
-            delete_choice = await user_select_from_list(msg.channel, delete_options, lambda x: x, msg.author, "Delete Options", 30)
+            delete_choice = await get.selection(msg.channel, delete_options, lambda x: x, msg.author, "Delete Options", 30)
             if delete_choice == None:
                 return
             # to delete an assignment
@@ -736,7 +738,7 @@ class Assignment_Command(Bot_Command):
                     name=f"{self.name} Existing Assignments\n", value=f"{assignments_list}"
                 )
                 await msg.channel.send(embed=assignments_embed)
-                assignments_list = await wait_for_reply(msg.author, msg.channel)
+                assignments_list = await get.reply(msg.author, msg.channel)
                 if assignments_list == None:
                     return
                 assignments_list = split_args_helper(assignments_list.content, True)
@@ -749,7 +751,7 @@ class Assignment_Command(Bot_Command):
                         # confirm deletion of assignment with user
                         await msg.channel.send(f"⚠️ **__ARE YOU SURE YOU WANT TO DELETE THE ASSIGNMENT__   {assignment_num}   __FROM THE {self.name} CLASS? THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__** ⚠️")
                         yes_or_no = ["Yes", "No"]
-                        response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                        response = await get.selection(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
                         if response == "Yes":
                             # if user cofirms, delete assignment from the JSON file, otherwise just do nothing
                             del self.class_info["assignments"][assignment_num]
@@ -781,7 +783,7 @@ class Assignment_Command(Bot_Command):
                         await msg.channel.send(
                             "Which assignment do you want to delete a solution from? **Note** You can only delete solutions that you have submitted."
                         )
-                        assignment_solution_folder = await user_select_from_list(msg.channel, user_solutions, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
+                        assignment_solution_folder = await get.selection(msg.channel, user_solutions, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
                         if assignment_solution_folder == None:
                             return
                         await msg.channel.send("Which solution do you want to delete?")
@@ -789,13 +791,13 @@ class Assignment_Command(Bot_Command):
                         user_solutions_list = []
                         for solution in solution_directory.iterdir():
                             user_solutions_list.append(solution.name)
-                        solution_choice = await user_select_from_list(msg.channel, user_solutions_list, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
+                        solution_choice = await get.selection(msg.channel, user_solutions_list, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
                         if solution_choice == None:
                             return
                         # ask user for confirmation to delete their solution
                         await msg.channel.send(f"Delete your solution called **{solution_choice}** from Assignment **{assignment_solution_folder}**?")
                         yes_or_no = ["Yes", "No"]
-                        response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "Yes or No?", timeout=30)
+                        response = await get.selection(msg.channel, yes_or_no, lambda x: x, msg.author, "Yes or No?", timeout=30)
                         if response == None:
                             return
                         elif response == "Yes":
@@ -813,7 +815,7 @@ class Assignment_Command(Bot_Command):
                     for assignment_num in self.class_info["assignments"]:
                         assignments.append("Assignment " + assignment_num)
                     await msg.channel.send("Which assignment solution do you want to delete?")
-                    response = await user_select_from_list(msg.channel, assignments, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
+                    response = await get.selection(msg.channel, assignments, lambda x: x, msg.author, f"{self.name} Assignments", timeout=30)
                     if response == None:
                         return
                     assignment_num = split_args_helper(response)[1]
@@ -834,7 +836,7 @@ class Assignment_Command(Bot_Command):
                         username_list.append(str(member))
                         user_id_list.append(user_id.name)
                     await msg.channel.send("Whose solution(s) do you want to delete?")
-                    solution_author = await user_select_from_list(msg.channel, username_list, lambda x: x, msg.author, "", 30)
+                    solution_author = await get.selection(msg.channel, username_list, lambda x: x, msg.author, "", 30)
                     if solution_author == None:
                         return
                     # get the corresponding user ID of the username chosen by user
@@ -848,13 +850,13 @@ class Assignment_Command(Bot_Command):
                     #if there is more than one solution ask user to choose which one to delete
                     if len(solutions_list) > 1:
                         await msg.channel.send(f"**{solution_author}** has uploaded multiple solution versions for Assignment {assignment_num}. Which version do you want to delete?")
-                        solution_name = await user_select_from_list(msg.channel, solutions_list, lambda x: x, msg.author, "", 30)
+                        solution_name = await get.selection(msg.channel, solutions_list, lambda x: x, msg.author, "", 30)
                         if solution_name == None:
                             return
                         # confirm deletion with user
                         await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE__ {solution_author}'s Solution: {solution_name} __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
                         yes_or_no = ["Yes", "No"]
-                        response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                        response = await get.selection(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
                         if response == "Yes":
                             #using shutil.rmtree() to remove directory if it is not empty as opposed to .rmdir() which can only remove empty directories/folders
                             shutil.rmtree(solution_directory/solution_name)
@@ -868,7 +870,7 @@ class Assignment_Command(Bot_Command):
                         solution_name = solutions_list[0] #TODO fix "ARE YOU SURE" messages
                         await msg.channel.send(f"⚠️  **__ {solution_author}'s Solution: {solution_name} __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
                         yes_or_no = ["Yes", "No"]
-                        response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                        response = await get.selection(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
                         if response == "Yes":
                             shutil.rmtree(solution_directory)
                             delete_empty_directories(solution_directory.parent, self.add_class.solutions_path)
@@ -889,20 +891,20 @@ class Assignment_Command(Bot_Command):
                     public_notes_directory = (self.add_class.notes_path/self.guild_id/self.name/"public")
                     await msg.channel.send("You can only delete the notes that you submitted. Do you want to delete an entire folder or specific notes from a folder?")
                     folder_or_notes = ["Delete a folder", "Delete notes from a folder"]
-                    response = await user_select_from_list(msg.channel, folder_or_notes, lambda x: x, msg.author, "Delete Options", 30)
+                    response = await get.selection(msg.channel, folder_or_notes, lambda x: x, msg.author, "Delete Options", 30)
                     if response == None:
                         return
                     if response == "Delete a folder":
                         user_notes_folders = [folder.name for folder in user_notes_directory.iterdir()]
                         await msg.channel.send("Which folder do you want to delete?")
-                        response = await user_select_from_list(msg.channel, user_notes_folders, lambda x: x, msg.author, "Delete Options", 30)
+                        response = await get.selection(msg.channel, user_notes_folders, lambda x: x, msg.author, "Delete Options", 30)
                         if response == None:
                             return
                         notes_folder_name = response
                         notes_filenames_list = [notes.name for notes in user_notes_directory/notes_folder_name]
                         await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE YOUR NOTES FOLDER CALLED:__  {notes_folder_name}  __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
                         yes_or_no = ["Yes", "No"]
-                        response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                        response = await get.selection(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
                         if response == "Yes": #TODO delete from public
                             #using shutil.rmtree() to remove directory if it is not empty as opposed to .rmdir() which can only remove empty directories/folders
                             shutil.rmtree(user_notes_directory/notes_folder_name)
@@ -917,19 +919,19 @@ class Assignment_Command(Bot_Command):
                     if response == "Delete notes from a folder":
                         user_notes_folders = [folder.name for folder in user_notes_directory.iterdir()]
                         await msg.channel.send("Select a folder to delete notes from")
-                        response = await user_select_from_list(msg.channel, user_notes_folders, lambda x: x, msg.author, "Select Options", 30)
+                        response = await get.selection(msg.channel, user_notes_folders, lambda x: x, msg.author, "Select Options", 30)
                         if response == None:
                             return
                         user_notes_directory = (user_notes_directory / response)
                         delete_notes_list = [notes.name for notes in user_notes_directory.iterdir()]
                         await msg.channel.send("Which notes do you want to delete?")
-                        notes_list = await user_select_multiple_from_list(msg.channel, delete_notes_list, lambda x: x, msg.author, "Delete Options")#TODO change to user_select_from_multiple_list where appropriate
+                        notes_list = await get.selections(msg.channel, delete_notes_list, lambda x: x, msg.author, "Delete Options")#TODO change to user_select_from_multiple_list where appropriate
                         if response == None: #TODO see if this ^ works
                             return
                         for filename in notes_list:
                             await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE YOUR NOTES CALLED:__  {filename}  __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
                             yes_or_no = ["Yes", "No"]
-                            response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                            response = await get.selection(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
                             if response == "Yes":
                                 #using Path.unlink() to remove a file
                                 Path.unlink(user_notes_directory/filename)#TODO delete from public
@@ -945,7 +947,7 @@ class Assignment_Command(Bot_Command):
                     public_notes_directory = (self.add_class.notes_path/self.guild_id/self.name/"public")
                     await msg.channel.send("What do you want to delete?")
                     folder_or_notes = ["Delete a folder", "Delete notes from a folder"]
-                    response = await user_select_from_list(msg.channel, folder_or_notes, lambda x: x, msg.author, "Delete Options", 30)
+                    response = await get.selection(msg.channel, folder_or_notes, lambda x: x, msg.author, "Delete Options", 30)
                     if response == None:
                         return
                     if response == "Delete a folder":
@@ -957,7 +959,7 @@ class Assignment_Command(Bot_Command):
                                 username_list.append(str(member))
                                 user_id_list.append(user_id.name)
                         await msg.channel.send("Whose folder do you want to delete?")
-                        response = await user_select_from_list(msg.channel, username_list, lambda x: x, msg.author, "", 30)
+                        response = await get.selection(msg.channel, username_list, lambda x: x, msg.author, "", 30)
                         if response == None:
                             return
                         user_name = response
@@ -965,14 +967,14 @@ class Assignment_Command(Bot_Command):
                         user_notes_directory = (user_notes_directory/user_id)
                         user_notes_folders = [folder.name for folder in user_notes_directory.iterdir()]
                         await msg.channel.send("Which folder do you want to delete?")
-                        response = await user_select_from_list(msg.channel, user_notes_folders, lambda x: x, msg.author, "", 30)
+                        response = await get.selection(msg.channel, user_notes_folders, lambda x: x, msg.author, "", 30)
                         if response == None:
                             return
                         notes_folder_name = response
                         notes_filenames_list = [notes.name for notes in (user_notes_directory/notes_folder_name).iterdir()]
                         await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE {user_name}'s FOLDER CALLED:__  {notes_folder_name}  __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
                         yes_or_no = ["Yes", "No"]
-                        response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                        response = await get.selection(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
                         if response == "Yes":
                             #using shutil.rmtree() to remove directory if it is not empty as opposed to .rmdir() which can only remove empty directories/folders
                             shutil.rmtree(user_notes_directory/notes_folder_name)
@@ -988,26 +990,26 @@ class Assignment_Command(Bot_Command):
                         usernames_list = [str(msg.guild.get_member(int(folder.name))) for folder in user_notes_directory.iterdir() if folder.name != "public"]
                         user_ids_list = [folder.name for folder in user_notes_directory.iterdir() if folder.name != "public"]
                         await msg.channel.send("Whose folder do you want to delete notes from?")
-                        response = await user_select_from_list(msg.channel, usernames_list, lambda x: x, msg.author, "Select Options", 30)
+                        response = await get.selection(msg.channel, usernames_list, lambda x: x, msg.author, "Select Options", 30)
                         if response == None:
                             return
                         user_notes_directory = (user_notes_directory / user_ids_list[usernames_list.index(response)])
                         user_folders_list = [folder.name for folder in user_notes_directory.iterdir()]
                         await msg.channel.send("Which folder do you want to delete notes from?")
-                        response = await user_select_from_list(msg.channel, user_folders_list, lambda x: x, msg.author, "Select Options", 30)
+                        response = await get.selection(msg.channel, user_folders_list, lambda x: x, msg.author, "Select Options", 30)
                         if response == None:
                             return
                         user_notes_directory = (user_notes_directory / response)
                         delete_notes_list = [notes.name for notes in user_notes_directory.iterdir()]
-                        
+
                         await msg.channel.send("Which notes do you want to delete?")#TODO Whose notes do you want to delete?
-                        notes_list = await user_select_multiple_from_list(msg.channel, delete_notes_list, lambda x: x, msg.author, "Delete Options")#TODO change to user_select_from_multiple_list where appropriate
+                        notes_list = await get.selections(msg.channel, delete_notes_list, lambda x: x, msg.author, "Delete Options")#TODO change to user_select_from_multiple_list where appropriate
                         if notes_list == None:
                             return
                         for filename in notes_list:
                             await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE YOUR NOTES CALLED:__  {filename}  __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
                             yes_or_no = ["Yes", "No"]
-                            response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                            response = await get.selection(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
                             if response == "Yes":
                                 #using Path.unlink() to remove a file
                                 Path.unlink(user_notes_directory/filename)#TODO delete from public
@@ -1032,7 +1034,7 @@ class Assignment_Command(Bot_Command):
                 # confirm with user about deleting the syllabus
                 await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE THE SYLLABUS FOR THE CLASS__   {self.name}   __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
                 yes_or_no = ["Yes", "No"]
-                response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                response = await get.selection(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
                 if response == "Yes":
                     # if user confirms, delete directory and all parent directories
                     shutil.rmtree(syllabus_path)
@@ -1065,7 +1067,7 @@ class Assignment_Command(Bot_Command):
                     )
                     return
                 await msg.channel.send("For which assignment do you want to delete a link from?")
-                response = await user_select_from_list(msg.channel, assignments_list, lambda x: x, msg.author, f"{self.name} Assignments", 30)
+                response = await get.selection(msg.channel, assignments_list, lambda x: x, msg.author, f"{self.name} Assignments", 30)
                 if response == None:
                     return
                 assignment_num = split_args_helper(response)[1]
@@ -1079,7 +1081,7 @@ class Assignment_Command(Bot_Command):
                     await msg.channel.send("There are no links added to this assignment for you to delete!")
                     return
                 await msg.channel.send("Which link do you want to delete?")
-                response = await user_select_from_list(msg.channel, urls, lambda x: x, msg.author, f"Assignment {assignment_num} Relevant Links", 30)
+                response = await get.selection(msg.channel, urls, lambda x: x, msg.author, f"Assignment {assignment_num} Relevant Links", 30)
                 title = relevant_links[urls.index(response)]["title"]
                 # loops through list
                 for i in self.class_info["assignments"][assignment_num][
@@ -1090,7 +1092,7 @@ class Assignment_Command(Bot_Command):
                         #confirm deletion with user
                         await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE THE LINK NAMED:__   {title}   __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
                         yes_or_no = ["Yes", "No"]
-                        response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                        response = await get.selection(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
                         if response == "Yes":
                             # remove it form the list
                             self.class_info["assignments"][assignment_num]["relevant_links"].remove(i)
@@ -1115,7 +1117,7 @@ class Assignment_Command(Bot_Command):
                 return
             await msg.channel.send("What would you like to edit?")
             edit_options = ["An assignment"]
-            edit_choice = await user_select_from_list(msg.channel, edit_options, lambda x: x, msg.author, "Edit Options", 30)
+            edit_choice = await get.selection(msg.channel, edit_options, lambda x: x, msg.author, "Edit Options", 30)
             if edit_choice == None:
                 return
             # to edit the title, url, or description of an assignment
@@ -1133,7 +1135,7 @@ class Assignment_Command(Bot_Command):
                     )
                     return
                 await msg.channel.send("Which assignment do you want to edit?")
-                response = await user_select_from_list(msg.channel, assignments_list, lambda x: x, msg.author, f"{self.name} Assignments", 30)
+                response = await get.selection(msg.channel, assignments_list, lambda x: x, msg.author, f"{self.name} Assignments", 30)
                 if response == None:
                     return
                 assignment_num = split_args_helper(response)[1]
@@ -1141,9 +1143,9 @@ class Assignment_Command(Bot_Command):
                 await msg.channel.send(
                     f"What would you like to edit from **assignment {assignment_num}**?"
                 )
-                # asks them what they want to edit using the edit_list (user_select_from_list is a function from utils.py)
+                # asks them what they want to edit using the edit_list
                 # edit_choice can either be a title, url or description
-                edit_choice = await user_select_from_list(msg.channel, edit_list, lambda x: x, msg.author, f"Edit Options For Assignment {assignment_num}", timeout=30,
+                edit_choice = await get.selection(msg.channel, edit_list, lambda x: x, msg.author, f"Edit Options For Assignment {assignment_num}", timeout=30,
                 )
                 if edit_choice == None:
                     return
@@ -1164,7 +1166,7 @@ class Assignment_Command(Bot_Command):
                         f"The current {edit_choice} for assignment {assignment_num} is: **{self.class_info['assignments'][assignment_num][edit_choice]}**\nPlease enter the new {edit_choice} for this assignment or type **Stop** to exit the command."
                     )
                 # if the new title they are trying to add is more than 100 characters, send an error message
-                edit = await wait_for_reply(msg.author, msg.channel)
+                edit = await get.reply(msg.author, msg.channel)
                 if edit == None:
                     return
                 edit = edit.content
@@ -1207,7 +1209,7 @@ class Assignment_Command(Bot_Command):
                     )
                 # list that the user chooses either "Accept or Deny" from
                 accept_deny = ["Accept", "Deny"]
-                apply_choice = await user_select_from_list(msg.channel, accept_deny, lambda x: x, msg.author, "Accept or Deny", timeout=30,
+                apply_choice = await get.selection(msg.channel, accept_deny, lambda x: x, msg.author, "Accept or Deny", timeout=30,
                 )
                 # if they chose "Accept", save and apply changes made
                 if apply_choice == "Accept":
@@ -1224,7 +1226,7 @@ class Assignment_Command(Bot_Command):
                     )
                     return
             return
-        
+
         # view a solution to an assignment
         # 211 solution 1 || $211 solutions 1
         elif args.casefold().startswith("solution ") or args.casefold().startswith("solutions "):
@@ -1270,7 +1272,7 @@ class Assignment_Command(Bot_Command):
                     username_list.append(str(member))
                     user_id_list.append(user_id.name)
                 await msg.channel.send(f"Whose solution do you want to view for Assignment **{assignment_num}**?")
-                solution_author = await user_select_from_list(msg.channel, username_list, lambda x: x, msg.author, "", 30)
+                solution_author = await get.selection(msg.channel, username_list, lambda x: x, msg.author, "", 30)
                 if solution_author == None:
                     return
                 user_id = user_id_list[username_list.index(solution_author)]
@@ -1283,7 +1285,7 @@ class Assignment_Command(Bot_Command):
                 # if the solution_author has uploaded multiple solution versions ask which one to view
                 if len(solutions_list) > 1:
                     await msg.channel.send(f"**{solution_author}** has uploaded multiple solution versions for Assignment {assignment_num}. Which version do you want to view?")
-                    solution_version = await user_select_from_list(msg.channel, solutions_list, lambda x: x, msg.author, "Solution Versions", 30)
+                    solution_version = await get.selection(msg.channel, solutions_list, lambda x: x, msg.author, "Solution Versions", 30)
                     if solution_version == None:
                         return
                     await msg.channel.send(f"Here are all the files in the **{solution_version}** folder")
@@ -1297,7 +1299,7 @@ class Assignment_Command(Bot_Command):
                         with solution_file.open("rb") as download_file:
                             await msg.channel.send(file=discord.File(download_file, solution_file.name))
             return
-           
+
         # Send a list of all existing/added assignments for the class (self.name) listed in self.class_info["assignments"]
         # Syntax: $211 assignments
         elif args.casefold() == "assignments":
@@ -1324,7 +1326,7 @@ class Assignment_Command(Bot_Command):
                 name=f"{self.name} Existing Assignments\n", value=f"{assignments_list}"
             )
             await msg.channel.send(embed=assignments_embed)
-        
+
         # notes
         # $211 notes
         elif args.casefold() == "notes":
@@ -1334,7 +1336,7 @@ class Assignment_Command(Bot_Command):
             public_notes_directory = (self.add_class.notes_path / self.guild_id / self.name / "public")
             await msg.channel.send("Which notes do you want to view?")
             all_notes_list = [notes.name for notes in public_notes_directory.iterdir()]
-            response = await user_select_multiple_from_list(msg.channel, all_notes_list, lambda x: x, msg.author, "View options")
+            response = await get.selections(msg.channel, all_notes_list, lambda x: x, msg.author, "View options")
             for notes_name in response:
                 notes_file = (public_notes_directory/notes_name)
                 with notes_file.open("rb") as download_file:
@@ -1351,7 +1353,7 @@ class Assignment_Command(Bot_Command):
                     await msg.channel.send(file=discord.File(download_file, download_file.name))
                 return
             args = args[len("syllabus") :].strip()
-                
+
         # if they try to view an assignment or class that doesnt exist
         # $211 %^7 or $lmao 69
         else:
@@ -1476,18 +1478,18 @@ class addClass(Bot_Command):
             if len(class_list) != 0:
                 await msg.channel.send("Do you still want to add the other classes that were not yet added to the server?")
                 yes_or_no = ["Yes", "No"]
-                response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                response = await get.selection(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
                 if response == "No" or response == None:
                     await msg.channel.send("No classes were added.")
                     return
             # loop through each class in class_list and ask user to fill in info about the class to later add to the JSON file
             for class_name in class_list:
                 await msg.channel.send(f"Please enter the professor's name for the **{class_name}** class:")
-                professor = await wait_for_reply(msg.author, msg.channel)
+                professor = await get.reply(msg.author, msg.channel)
                 if professor == None:
                     return
                 await msg.channel.send(f"Please enter {professor.content}'s website for the **{class_name}** class. If the professor does not have a website, type **None**.")
-                website = await wait_for_reply(msg.author, msg.channel)
+                website = await get.reply(msg.author, msg.channel)
                 if website == None:
                     return
                 if website.content.casefold() == "none":
@@ -1497,7 +1499,7 @@ class addClass(Bot_Command):
                     if website == "stop" or website == None:
                         return
                 await msg.channel.send(f"Please enter the course title for the **{class_name}** class:")
-                course_title = await wait_for_reply(msg.author, msg.channel)
+                course_title = await get.reply(msg.author, msg.channel)
                 if course_title == None:
                     return
                 #website doesn't need a .content becuase link_check() deals with that
@@ -1545,7 +1547,7 @@ class addClass(Bot_Command):
                 else:
                     await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE THE CLASS__   {class_num}   __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
                     yes_or_no = ["Yes", "No"]
-                    response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                    response = await get.selection(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
                     if response == "Yes":
                         # deleting the class_num command from JSON file, self.commands list, and bot_commands. Then saving the JSON file
                         for i in self.commands:

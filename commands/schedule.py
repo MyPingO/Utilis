@@ -1,6 +1,7 @@
 from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from pathlib import Path
-from utils import get_member, get_role,  Multi_Page_Embed_Message
+from utils import find
+from utils.paged_message import Paged_Message
 from typing import Optional, Union
 
 import datetime
@@ -214,7 +215,7 @@ class Schedule_Command(Bot_Command):
                 if title == "all" and msg.author.guild_permissions.administrator:
                     for item in items:
                         #delete the role assigned to this event
-                        role = await get_role(channel, item["name"])
+                        role = await find.role(channel, item["name"])
                         if role is not None:
                             await role.delete()
                         #remove the event from the log file
@@ -253,7 +254,7 @@ class Schedule_Command(Bot_Command):
                             #delete the message requesting participants
                             await m.delete()
                             #delete the role assigned to this event
-                            role = await get_role(channel, event["name"])
+                            role = await find.role(channel, event["name"])
                             if role:
                                 await role.delete()
                         #an unauthorized user attempted to delete th
@@ -421,7 +422,7 @@ class Schedule_Command(Bot_Command):
             #get the list of dictionaries of this server's events for the specified year
             schedule = schedule[year]
 
-            embeds = (Multi_Page_Embed_Message.embed_list_from_items(
+            embeds = (Paged_Message.embed_list_from_items(
                     schedule,
                     lambda t: f"{guild.name}'s {year} Schedule",
                     None,
@@ -434,7 +435,7 @@ class Schedule_Command(Bot_Command):
                     max_field_count = 12
                 )
             )
-            await Multi_Page_Embed_Message(embeds, m).send(channel)
+            await Paged_Message(embeds, m).send(channel)
         #post the schedule of all server events
         else:
             #stores lists of embeds per year
@@ -442,7 +443,7 @@ class Schedule_Command(Bot_Command):
             #create a list of embeds per year
             for year in schedule:
                 #appends the list of embeds associated with this year to years
-                years += (Multi_Page_Embed_Message.embed_list_from_items(
+                years += (Paged_Message.embed_list_from_items(
                         schedule[year],
                         lambda t: f"{guild.name}'s {year + ' ' if len(schedule) > 1 else ''}Schedule",
                         None,
@@ -456,7 +457,7 @@ class Schedule_Command(Bot_Command):
                     )
                 )
             #post the schedule
-            await Multi_Page_Embed_Message(years, m).send(channel)
+            await Paged_Message(years, m).send(channel)
 
 
 

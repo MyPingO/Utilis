@@ -2,7 +2,8 @@ import discord
 from typing import Union, Optional
 
 from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
-import utils
+from utils import fmt
+from utils.paged_message import get_paged_footer, Paged_Message
 
 
 class Help_Command(Bot_Command):
@@ -33,17 +34,17 @@ class Help_Command(Bot_Command):
             # Otherwise, print a list of all commands with a short description
 
             def embed_editor(
-                embed: discord.Embed, paged_embed_msg: utils.Multi_Page_Embed_Message
+                embed: discord.Embed, paged_msg: Paged_Message
             ) -> discord.Embed:
                 # Updates the help message's embed after pages can no longer
                 # be turned.
-                if paged_embed_msg.page is not None:
+                if paged_msg.page is not None:
                     embed.set_footer(text="")
                     max_footer_len = 6000 - len(embed)
 
-                    new_footer = utils.max_len_string(
+                    new_footer = fmt.bound_str(
                         f" Requested by {msg.author.name}#{msg.author.discriminator} |"
-                        + f" Page {paged_embed_msg.page + 1}/{len(paged_embed_msg.pages)}.",
+                        + f" Page {paged_msg.page + 1}/{len(paged_msg.pages)}.",
                         max_footer_len,
                         add_ellipsis=False,
                     )
@@ -53,7 +54,7 @@ class Help_Command(Bot_Command):
 
             help_embeds = self.get_help_embeds(msg.channel, msg.author)
 
-            await utils.Multi_Page_Embed_Message(
+            await Paged_Message(
                 help_embeds, msg.author, embed_editor if len(help_embeds) > 1 else None
             ).send(msg.channel)
 
@@ -80,7 +81,7 @@ class Help_Command(Bot_Command):
                     command_categories[cmd.category].append(cmd)
 
         ret = []
-        sample_footer_len = len(utils.paged_footer_generator(999, 999, user) or "")
+        sample_footer_len = len(get_paged_footer(999, 999, user) or "")
         description = (
             "Run `help <command>` to get detailed information about a specific command."
         )
@@ -117,7 +118,7 @@ class Help_Command(Bot_Command):
 
         # Add footers to embeds
         for index, e in enumerate(ret):
-            footer = utils.paged_footer_generator(index + 1, len(ret), user)
+            footer = get_paged_footer(index + 1, len(ret), user)
             if footer:
                 e.set_footer(text=footer)
 
@@ -165,7 +166,7 @@ class Help_Command(Bot_Command):
 
         # Check to see that a valid command was passed or found
         if not isinstance(cmd, Bot_Command):
-            error_message = utils.format_max_len_string(
+            error_message = fmt.format_maxlen(
                 "Could not find the command `{}`", command
             )
             await channel.send(error_message, delete_after=7)
@@ -173,7 +174,7 @@ class Help_Command(Bot_Command):
 
         # Make sure the user can run the command
         if not cmd.can_run(channel, user):
-            error_message = utils.format_max_len_string(
+            error_message = fmt.format_maxlen(
                 "You do not have permission to run `{}` here.", cmd.name
             )
             await channel.send(error_message, delete_after=7)

@@ -1,12 +1,7 @@
 from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from core import client
 from pathlib import Path
-from utils import (
-    get_channel,
-    get_role,
-    user_select_from_list,
-    format_max_len_string,
-)
+from utils import find, fmt
 
 import discord
 import json
@@ -51,21 +46,21 @@ class Del_Command(Bot_Command):
                 # verify before deleting each role
                 for r in parsed_args:
                     try:
-                        role = await get_role(channel, r, responder=msg.author)
+                        role = await find.role(channel, r, responder=msg.author)
                         if await self.verify(
                             channel, type(role).__name__, r, msg.author
                         ):
                             await role.delete()
                             print(f"Role {r} has been deleted")
                             await channel.send(
-                                format_max_len_string(
+                                fmt.format_maxlen(
                                     "Role `{}` has been deleted.", r
                                 )
                             )
                     except AttributeError:
                         print(f"Could not find a role called {r}")
                         await channel.send(
-                            format_max_len_string(
+                            fmt.format_maxlen(
                                 "Could not find a role called `{}`", r
                             )
                         )
@@ -74,7 +69,7 @@ class Del_Command(Bot_Command):
                 parsed_args = parsed_args[1].split(", ")
                 for c in parsed_args:
                     try:
-                        del_channel = await get_channel(
+                        del_channel = await find.channel(
                             channel, c, responder=msg.author
                         )
                         if await self.verify(
@@ -83,14 +78,14 @@ class Del_Command(Bot_Command):
                             await del_channel.delete()
                             print(f"Channel {c} has been deleted")
                             await msg.channel.send(
-                                format_max_len_string(
+                                fmt.format_maxlen(
                                     "Channel `{}` has been deleted.", c
                                 )
                             )
                     except AttributeError:
                         print(f"Could not find a channel called {c}")
                         await msg.channel.send(
-                            format_max_len_string(
+                            fmt.format_maxlen(
                                 "Could not find a channel called `{}`", c
                             )
                         )
@@ -105,7 +100,7 @@ class Del_Command(Bot_Command):
 
         # ask for verification before deleting the object from the server
         msg = await channel.send(
-            format_max_len_string(
+            fmt.format_maxlen(
                 "Are you sure you want to delete the `{}` named `{}`? This action cannot be undone.",
                 item,
                 name,

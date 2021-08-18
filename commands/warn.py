@@ -7,7 +7,7 @@ from commands.unmute import unmute
 from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from pathlib import Path
 from datetime import datetime, time, timedelta
-from utils import get_member
+from utils import find
 
 # from commands.mute import command as mute
 
@@ -52,7 +52,7 @@ class Warn_Command(Bot_Command):
             """ split_args[0] = count
                 split_args[1:] = user_id """
             user_name = split_args[1]
-            member = await get_member(msg.channel, user_name, msg.author)
+            member = await find.member(msg.channel, user_name, msg.author)
             if member is None:
                 await msg.channel.send(
                     f"Error: **{user_name}** not found. If you are having trouble typing in a user's name, you can also use their User ID! Example: **$warn count {random.randint(100000000000000000, 999999999999999999)}**"
@@ -85,7 +85,7 @@ class Warn_Command(Bot_Command):
                 split_args[1] = reason   """
 
             user_name = split_args[0]
-            member = await get_member(msg.channel, user_name, msg.author)
+            member = await find.member(msg.channel, user_name, msg.author)
             if member is None:
                 await msg.channel.send(
                     f"Error: **{user_name}** not found. If you are having trouble typing in a user's name, you can also use their User ID! Example: **$warn {random.randint(100000000000000000, 999999999999999999)}**"

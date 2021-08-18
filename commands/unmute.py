@@ -1,5 +1,5 @@
 from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
-from utils import get_member
+from utils import find
 from pathlib import Path
 from typing import Optional, Union
 
@@ -128,14 +128,14 @@ class Unmute_Command(Bot_Command):
         else:
             #if m is a string try to get the Member object
             if isinstance(m, str):
-                if await get_member(channel, m, responder=author) is None:
+                if await find.member(channel, m, responder=author) is None:
                     print(f"{m} could not be found")
                     embed.title = f"[{m}] Not Found"
                     embed.color = discord.Color.blue()
                     await channel.send(embed=embed)
                     return
                 else:
-                    m = await get_member(channel, m, responder=author)
+                    m = await find.member(channel, m, responder=author)
 
             #if member isn't muted
             if mute not in m.roles:

@@ -1,5 +1,5 @@
 from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
-from utils import get_role
+from utils import find
 
 import discord
 
@@ -47,7 +47,7 @@ class Count_Command(Bot_Command):
         elif args.startswith("role "):
             # get the role name
             role = args[len("role ") :].strip()
-            role = await get_role(channel, role, responder=msg.author)
+            role = await find.role(channel, role, responder=msg.author)
             if role is not None:
                 # create an embed with the role's color and how many members have the role
                 embed = discord.Embed(
