@@ -7,7 +7,7 @@ from commands.help import help_cmd
 from random import choice
 from pathlib import Path
 from random import choice
-from utils import user_select_from_list, wait_for_reply, format_max_len_string, split_args as split_args_helper, delete_empty_directories
+from utils import user_select_from_list, user_select_multiple_from_list, wait_for_reply, format_max_len_string, split_args as split_args_helper, delete_empty_directories
 from typing import Optional
 
 async def link_check(link, msg):
@@ -249,7 +249,7 @@ class Assignment_Command(Bot_Command):
 
         elif args.casefold() == "add":
             await msg.channel.send("What would you like to add?")
-            add_options = ["An assignment", "A solution to an assignment", "A helpful or relevant link for an assignment", "Notes for the class", "The class syllabus"]
+            add_options = ["An assignment", "A solution to an assignment", "Notes for the class", "A helpful or relevant link for an assignment", "The class syllabus"]
             add_choice = await user_select_from_list(msg.channel, add_options, lambda x: x, msg.author, "Add Options", 30)
             if add_choice == None:
                 return
@@ -421,9 +421,146 @@ class Assignment_Command(Bot_Command):
                             await msg.channel.send("Edits have been denied! No changes were made.")
                             return
                     await msg.channel.send("Enter the next file or type **Done** if you are finished.")
-            # add notes to a class
-            if add_choice == "Notes for the class": #TODO work on a way to add notes
-                return
+            # add notes to the class
+            if add_choice == "Notes for the class":
+                notes_directory = (self.add_class.notes_path / self.guild_id / self.name)
+                public_notes_directory = (notes_directory / "public")
+                user_notes_directory = (notes_directory / str(msg.author.id))
+                if not notes_directory.exists():
+                    notes_directory.mkdir(parents = True)
+                if not public_notes_directory.exists():
+                    public_notes_directory.mkdir()
+                
+
+                await msg.channel.send("Give a name to the folder that will store your notes and try to be descriptive. You can only use numbers and letters! Type **\Stop/** to stop adding notes.")
+                # while True loop that keeps asking to correct errors if any occur i.e file name exists or ivalid file name
+                # unless user types "stop" in which case, return
+                while True:
+                    notes_name = await wait_for_reply(msg.author, msg.channel)
+                    if notes_name == None:
+                        return
+                    if notes_name.content.casefold() == "\stop/":
+                        await msg.channel.send("No changes were made")
+                        return
+                    elif (user_notes_directory/notes_name.content).exists():
+                        await msg.channel.send("A folder with this name already exists! Please enter a different name or type **\Stop/** to exit the command.")
+                        continue
+                    # goes through each charcter in the name to check if it's either a letter, number or space. If it's not, ask for a new name.
+                    elif not all(character.isalnum() or character.isspace() for character in notes_name.content):
+                        await msg.channel.send("Your folder name contained characters that were either not letters or numbers! Please enter another name or type **\Stop/** to exit the command.")
+                        continue
+                    elif len(notes_name.content) > 100:
+                        await msg.channel.send("Your folder name is longer than 100 characters! Please choose a shorter file name and try again or type **\Stop/** to stop adding your file.")
+                    else:
+                        break
+                user_notes_directory = (user_notes_directory / notes_name.content)
+                user_notes_directory.mkdir(parents = True)
+
+                await msg.channel.send("Please upload your notes as **attachments only** or **text only**! When you are done uploading your notes, type **Done** to exit the command.")
+                counter = 0
+                while True:
+                    counter += 1
+                    # delete empty folders using delete_empty_directories() if no files given or user is done giving files.
+                    # More info on the function in utils.py
+                    notes = await wait_for_reply(msg.author, msg.channel, timeout = 30)
+                    if notes == None:
+                        delete_empty_directories(user_notes_directory, self.add_class.notes_path)
+                        delete_empty_directories(public_notes_directory, self.add_class.notes_path)
+                        return
+                    if notes.content.casefold() == "done":
+                        if not any(user_notes_directory.iterdir()):
+                            delete_empty_directories(user_notes_directory, self.add_class.notes_path)
+                            await msg.channel.send("No changes were made.")
+                            return
+                        if not any(public_notes_directory.iterdir()):
+                            delete_empty_directories(public_notes_directory, self.add_class.notes_path)
+                            await msg.channel.send("No changes were made.")
+                            return
+                        else:
+                            await msg.channel.send("Your files have been added successfully!")
+                            return
+                    #if both, attachment and text was given
+                    if notes.attachments and len(notes.content) > 0:
+                        await msg.channel.send("You can only upload your notes as **attachments only** or **text only**! Please try again or type **Done** to exit the command.")
+                        continue
+                    # using a for loop to go through attachments becuase mobile allows for multiple atachments per message
+                    # just in case a mobile user tries to add a notes
+                    if len(notes.attachments) > 0:
+                        # check if the file given is an empty file i.e file size is 0bytes
+                        for attachment in notes.attachments:
+                            if attachment.size == 0:
+                                await msg.channel.send(f"Error: **{attachment.filename}** is an empty file! Please make sure you submit attachments that are not empty.")
+                                delete_empty_directories(notes_directory, self.add_class.notes_path)
+                                return
+                        # check if a notes with the same filename already exists
+                        for attachment in notes.attachments:
+                            same_file_name = False
+                            for notes_file in public_notes_directory.iterdir():
+                                if attachment.filename == notes_file.name:
+                                    same_file_name = True
+                                    await msg.channel.send(f"A file with the name **{attachment.filename}** already exists! Please resubmit the file with a new name.")
+                                    break
+                            if same_file_name == True:
+                                break
+                        if same_file_name == True:
+                            continue
+                        # confirm that the attachments given are valid and correct
+                        confirm_or_deny = ["Confirm", "Deny"]
+                        for attachment in notes.attachments:
+                            await msg.channel.send(f"Please confirm that **{attachment.filename}** are the correct notes for the {self.name} class.")
+                            response = await user_select_from_list(msg.channel, confirm_or_deny, lambda x: x, msg.author, "Confirm or Deny", timeout=30)
+                            # add file to directory if user confirms
+                            if response == "Confirm":
+                                await attachment.save(user_notes_directory/f"{attachment.filename}")
+                                await attachment.save(public_notes_directory/f"{attachment.filename}")
+                                await msg.channel.send("File added!")
+                            else:
+                                # delete empty directories if no files were added
+                                delete_empty_directories(user_notes_directory, self.add_class.notes_path)
+                                delete_empty_directories(public_notes_directory, self.add_class.notes_path)
+                                await msg.channel.send("Uploads have been denied! No changes were made.")
+                                return
+                        await msg.channel.send("Upload the next file or type **Done** if you are finished.")
+                    elif len(notes.content) > 0:
+                        text_notes = notes.content
+                        await msg.channel.send("Are you sure this text is correct? You won't be able to edit this text once you have submitted it.")
+                        confirm_or_deny = ["Confirm", "Deny"]
+                        response = await user_select_from_list(msg.channel, confirm_or_deny, lambda x: x, msg.author, "Confirm or Deny", timeout=30)
+                        # add file to directory if user confirms
+                        if response == "Confirm":
+                            await msg.channel.send("Enter a name for your text file. Your name can only contain numbers or letters! Type **\Stop/** to stop adding your file.")
+                            while True:
+                                text_file_name = await wait_for_reply(msg.author, msg.channel)
+                                if text_file_name == None:
+                                    return
+                                if text_file_name.content.casefold() == "\stop/":
+                                    await msg.channel.send("No changes were made")
+                                    return
+                                elif (public_notes_directory/text_file_name.content).exists() or (user_notes_directory/text_file_name.content).exists():
+                                    await msg.channel.send("There are notes that have already been added with that name! Please enter a different name or type **\Stop/** to stop adding your file.")
+                                    continue
+                                # goes through each charcter in the name to check if it's either a letter, number or space. If it's not, ask for a new name.
+                                elif not all(character.isalnum() or character.isspace() for character in text_file_name.content):
+                                    await msg.channel.send("Your file name contained characters that were not letters or numbers! Please enter another name or type **\Stop/** to stop adding your file.")
+                                    continue
+                                elif len(text_file_name.content) > 100:
+                                    await msg.channel.send("Your file name is longer than 100 characters! Please choose a shorter file name and try again or type **\Stop/** to stop adding your file.")
+                                else:
+                                    break
+                            text_file_name = text_file_name.content
+                            write_user_text_notes = (user_notes_directory / f"{text_file_name}.txt")
+                            with write_user_text_notes.open("w") as file:
+                                file.write(text_notes)
+                            write_public_text_notes = (public_notes_directory / f"{text_file_name}.txt")
+                            with write_public_text_notes.open("w") as file:
+                                file.write(text_notes)
+                            await msg.channel.send("File added!")
+                            await msg.channel.send("Upload the next file or type **Done** if you are finished.") #TODO check names arent more than 100 characters
+                        else:
+                            # delete empty directories if no files were added
+                            delete_empty_directories(user_notes_directory, self.add_class.notes_path)
+                            await msg.channel.send("Uploads have been denied! No changes were made.")
+                            return
             # add a syllabus to the class
             if add_choice == "The class syllabus":
                 # set a directory to store the syllabus in
@@ -566,7 +703,7 @@ class Assignment_Command(Bot_Command):
                 return
         elif args.casefold() == "delete":
             await msg.channel.send("What would you like to delete?")
-            delete_options = ["An assignment", "A solution to an assignment", "A helpful or relevant link for an assignment", "Notes for the class", "The class syllabus"]
+            delete_options = ["An assignment", "A solution to an assignment", "Notes for the class", "A helpful or relevant link for an assignment", "The class syllabus"]
             delete_choice = await user_select_from_list(msg.channel, delete_options, lambda x: x, msg.author, "Delete Options", 30)
             if delete_choice == None:
                 return
@@ -739,9 +876,148 @@ class Assignment_Command(Bot_Command):
                         else:
                             await msg.channel.send("No changes were made.")
                         return
-            # to delete notes for a class
+            # to delete notes from the class
             if delete_choice == "Notes for the class":
-                return
+                if not (self.add_class.notes_path / self.guild_id):
+                    await msg.channel.send("No notes have been added to this server to delete.")
+                    return
+                if not msg.author.guild_permissions.administrator:
+                    if not (self.add_class.notes_path/self.guild_id/self.name/str(msg.author.id)).exists():
+                        await msg.channel.send("Error: You have not uploaded any notes to delete! You can only delete notes that you have submitted.")
+                        return
+                    user_notes_directory = (self.add_class.notes_path/self.guild_id/self.name/str(msg.author.id))
+                    public_notes_directory = (self.add_class.notes_path/self.guild_id/self.name/"public")
+                    await msg.channel.send("You can only delete the notes that you submitted. Do you want to delete an entire folder or specific notes from a folder?")
+                    folder_or_notes = ["Delete a folder", "Delete notes from a folder"]
+                    response = await user_select_from_list(msg.channel, folder_or_notes, lambda x: x, msg.author, "Delete Options", 30)
+                    if response == None:
+                        return
+                    if response == "Delete a folder":
+                        user_notes_folders = [folder.name for folder in user_notes_directory.iterdir()]
+                        await msg.channel.send("Which folder do you want to delete?")
+                        response = await user_select_from_list(msg.channel, user_notes_folders, lambda x: x, msg.author, "Delete Options", 30)
+                        if response == None:
+                            return
+                        notes_folder_name = response
+                        notes_filenames_list = [notes.name for notes in user_notes_directory/notes_folder_name]
+                        await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE YOUR NOTES FOLDER CALLED:__  {notes_folder_name}  __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
+                        yes_or_no = ["Yes", "No"]
+                        response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                        if response == "Yes": #TODO delete from public
+                            #using shutil.rmtree() to remove directory if it is not empty as opposed to .rmdir() which can only remove empty directories/folders
+                            shutil.rmtree(user_notes_directory/notes_folder_name)
+                            for filename in notes_filenames_list:
+                                Path.unlink(public_notes_directory/filename)
+                            delete_empty_directories(user_notes_directory, self.add_class.notes_path)
+                            delete_empty_directories(public_notes_directory, self.add_class.notes_path)
+                            await msg.channel.send(f"**{notes_folder_name}** has been removed from the **{self.name}** class!")
+                        else:
+                            await msg.channel.send("No changes were made.")
+                        return
+                    if response == "Delete notes from a folder":
+                        user_notes_folders = [folder.name for folder in user_notes_directory.iterdir()]
+                        await msg.channel.send("Select a folder to delete notes from")
+                        response = await user_select_from_list(msg.channel, user_notes_folders, lambda x: x, msg.author, "Select Options", 30)
+                        if response == None:
+                            return
+                        user_notes_directory = (user_notes_directory / response)
+                        delete_notes_list = [notes.name for notes in user_notes_directory.iterdir()]
+                        await msg.channel.send("Which notes do you want to delete?")
+                        notes_list = await user_select_multiple_from_list(msg.channel, delete_notes_list, lambda x: x, msg.author, "Delete Options")#TODO change to user_select_from_multiple_list where appropriate
+                        if response == None: #TODO see if this ^ works
+                            return
+                        for filename in notes_list:
+                            await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE YOUR NOTES CALLED:__  {filename}  __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
+                            yes_or_no = ["Yes", "No"]
+                            response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                            if response == "Yes":
+                                #using Path.unlink() to remove a file
+                                Path.unlink(user_notes_directory/filename)#TODO delete from public
+                                Path.unlink(public_notes_directory/filename)
+                                await msg.channel.send(f"**{filename}** has been removed from the **{self.name}** class!")
+                            else:
+                                await msg.channel.send("No changes were made.")
+                        # delete potentially empty folder
+                        delete_empty_directories(user_notes_directory, self.add_class.notes_path)
+                        return
+                else:
+                    user_notes_directory = (self.add_class.notes_path/self.guild_id/self.name)
+                    public_notes_directory = (self.add_class.notes_path/self.guild_id/self.name/"public")
+                    await msg.channel.send("What do you want to delete?")
+                    folder_or_notes = ["Delete a folder", "Delete notes from a folder"]
+                    response = await user_select_from_list(msg.channel, folder_or_notes, lambda x: x, msg.author, "Delete Options", 30)
+                    if response == None:
+                        return
+                    if response == "Delete a folder":
+                        username_list = []
+                        user_id_list = []
+                        for user_id in user_notes_directory.iterdir():
+                            if user_id.name != "public":
+                                member = msg.guild.get_member(int(user_id.name))
+                                username_list.append(str(member))
+                                user_id_list.append(user_id.name)
+                        await msg.channel.send("Whose folder do you want to delete?")
+                        response = await user_select_from_list(msg.channel, username_list, lambda x: x, msg.author, "", 30)
+                        if response == None:
+                            return
+                        user_name = response
+                        user_id = user_id_list[username_list.index(response)]
+                        user_notes_directory = (user_notes_directory/user_id)
+                        user_notes_folders = [folder.name for folder in user_notes_directory.iterdir()]
+                        await msg.channel.send("Which folder do you want to delete?")
+                        response = await user_select_from_list(msg.channel, user_notes_folders, lambda x: x, msg.author, "", 30)
+                        if response == None:
+                            return
+                        notes_folder_name = response
+                        notes_filenames_list = [notes.name for notes in (user_notes_directory/notes_folder_name).iterdir()]
+                        await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE {user_name}'s FOLDER CALLED:__  {notes_folder_name}  __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
+                        yes_or_no = ["Yes", "No"]
+                        response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                        if response == "Yes":
+                            #using shutil.rmtree() to remove directory if it is not empty as opposed to .rmdir() which can only remove empty directories/folders
+                            shutil.rmtree(user_notes_directory/notes_folder_name)
+                            for filename in notes_filenames_list:
+                                Path.unlink(public_notes_directory/filename)
+                            delete_empty_directories(user_notes_directory, self.add_class.notes_path)
+                            delete_empty_directories(public_notes_directory, self.add_class.notes_path)
+                            await msg.channel.send(f"**{notes_folder_name}** has been removed from the **{self.name}** class!")
+                        else:
+                            await msg.channel.send("No changes were made.")
+                        return
+                    if response == "Delete notes from a folder":
+                        usernames_list = [str(msg.guild.get_member(int(folder.name))) for folder in user_notes_directory.iterdir() if folder.name != "public"]
+                        user_ids_list = [folder.name for folder in user_notes_directory.iterdir() if folder.name != "public"]
+                        await msg.channel.send("Whose folder do you want to delete notes from?")
+                        response = await user_select_from_list(msg.channel, usernames_list, lambda x: x, msg.author, "Select Options", 30)
+                        if response == None:
+                            return
+                        user_notes_directory = (user_notes_directory / user_ids_list[usernames_list.index(response)])
+                        user_folders_list = [folder.name for folder in user_notes_directory.iterdir()]
+                        await msg.channel.send("Which folder do you want to delete notes from?")
+                        response = await user_select_from_list(msg.channel, user_folders_list, lambda x: x, msg.author, "Select Options", 30)
+                        if response == None:
+                            return
+                        user_notes_directory = (user_notes_directory / response)
+                        delete_notes_list = [notes.name for notes in user_notes_directory.iterdir()]
+                        
+                        await msg.channel.send("Which notes do you want to delete?")#TODO Whose notes do you want to delete?
+                        notes_list = await user_select_multiple_from_list(msg.channel, delete_notes_list, lambda x: x, msg.author, "Delete Options")#TODO change to user_select_from_multiple_list where appropriate
+                        if notes_list == None:
+                            return
+                        for filename in notes_list:
+                            await msg.channel.send(f"⚠️  **__ARE YOU SURE YOU WANT TO DELETE YOUR NOTES CALLED:__  {filename}  __THIS CANNOT BE UNDONE AND SHOULD BE CONSIDERED CAREFULLY!__**  ⚠️")
+                            yes_or_no = ["Yes", "No"]
+                            response = await user_select_from_list(msg.channel, yes_or_no, lambda x: x, msg.author, "", 30)
+                            if response == "Yes":
+                                #using Path.unlink() to remove a file
+                                Path.unlink(user_notes_directory/filename)#TODO delete from public
+                                Path.unlink(public_notes_directory/filename)
+                                await msg.channel.send(f"**{filename}** has been removed from the **{self.name}** class!")
+                            else:
+                                await msg.channel.send("No changes were made.")
+                        # deletes potentially empty folder
+                        delete_empty_directories(user_notes_directory, self.add_class.notes_path)
+                        return
             # to delete the class syllabus
             if delete_choice == "The class syllabus":
                 if not msg.author.guild_permissions.administrator:
@@ -966,10 +1242,10 @@ class Assignment_Command(Bot_Command):
             # since this is the wrong syntax because assignment number isn't specified with adding or deleting a solution
             # send a message to let them know the format is wrong
             if "add" in solution_choice_list:
-                await msg.channel.send(f"Error: To add a solution to an assignment in the **{self.name}** class. Type **{bot_prefix}{self.name} solution add**")
+                await msg.channel.send(f"Error: To add a solution to an assignment in the **{self.name}** class. Type **{bot_prefix}{self.name} add**")
                 return
             if "delete" in solution_choice_list:
-                await msg.channel.send(f"Error: To delete a solution to an assignment in the **{self.name}** class. Type **{bot_prefix}{self.name} solution delete**")
+                await msg.channel.send(f"Error: To delete a solution to an assignment in the **{self.name}** class. Type **{bot_prefix}{self.name} delete**")
                 return
             for assignment_num in solution_choice_list.copy():
                 solution_directory = (self.add_class.solutions_path / self.guild_id / self.name / assignment_num)
@@ -1048,7 +1324,22 @@ class Assignment_Command(Bot_Command):
                 name=f"{self.name} Existing Assignments\n", value=f"{assignments_list}"
             )
             await msg.channel.send(embed=assignments_embed)
-
+        
+        # notes
+        # $211 notes
+        elif args.casefold() == "notes":
+            if not (self.add_class.notes_path / self.guild_id).exists():
+                await msg.channel.send("No notes have been added to the server yet!")
+                return
+            public_notes_directory = (self.add_class.notes_path / self.guild_id / self.name / "public")
+            await msg.channel.send("Which notes do you want to view?")
+            all_notes_list = [notes.name for notes in public_notes_directory.iterdir()]
+            response = await user_select_multiple_from_list(msg.channel, all_notes_list, lambda x: x, msg.author, "View options")
+            for notes_name in response:
+                notes_file = (public_notes_directory/notes_name)
+                with notes_file.open("rb") as download_file:
+                    await msg.channel.send(file=discord.File(download_file, notes_name))
+            return
         # get the syllabus for a class
         # $211 syllabus
         elif args.casefold().startswith("syllabus"):
@@ -1083,8 +1374,9 @@ class addClass(Bot_Command):
 
     name = "class"
     # set variables to path of folders to call them later easily
-    solutions_path = Path("data/assignments/solutions")
     assignments_path = Path("data/assignments/assignments.json")
+    notes_path = Path("data/assignments/notes")
+    solutions_path = Path("data/assignments/solutions")
     commands = []  # all commands on all servers (211, 212, 69, 420)
     def __init__(self):
         if not self.assignments_path.exists():
