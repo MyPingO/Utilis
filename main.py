@@ -7,6 +7,7 @@ os.chdir(dname)
 
 import discord
 import asyncio
+import logging
 from pathlib import Path
 
 from core import client
@@ -14,6 +15,8 @@ from bot_cmd import bot_commands
 from utils import fmt
 
 bot_prefix = "!"
+
+log = logging.getLogger("main")
 
 
 def starts_with_mention(content: str) -> bool:
@@ -139,6 +142,14 @@ async def on_message(msg: discord.Message):
                     else:
                         # If the command exists but the member can not run it, send
                         # an error message
+                        command.log.info(
+                            fmt.get_user_log(
+                                f'tried to call command "{command}" with message: {fmt.escape_newlines(msg.content)}',
+                                msg.author,
+                                msg.channel,
+                                msg.guild,
+                            )
+                        )
                         error_message = fmt.format_maxlen(
                             "You do not have permission to run `{}` here.", cmd_name
                         )
@@ -148,6 +159,14 @@ async def on_message(msg: discord.Message):
                         )
                 else:
                     # If the command does not exist, send an error message
+                    log.info(
+                        fmt.get_user_log(
+                            f'tried to call command "{cmd_name}" with message: {fmt.escape_newlines(msg.content)}',
+                            msg.author,
+                            msg.channel,
+                            msg.guild,
+                        )
+                    )
                     error_message = fmt.format_maxlen("No command `{}`", cmd_name)
                     await msg.channel.send(
                         error_message,

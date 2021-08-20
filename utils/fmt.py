@@ -1,3 +1,5 @@
+import discord
+import re
 import string
 from typing import Any, Mapping, Optional, Sequence, Union
 
@@ -325,3 +327,66 @@ class Maxlen_Formatter(string.Formatter):
             for key in kwargs.keys():
                 if key not in used_args:
                     raise ValueError(f"kwarg {key} ({kwargs[key]}) was never used")
+
+
+re_backslash_n = re.compile(r"((\\+)n)")
+
+
+def escape_newlines(s: str) -> str:
+    return re_backslash_n.sub(r"\\\1", s).replace("\n", "\\n")
+
+
+def get_user_log(
+    action: str,
+    user: Union[discord.User, discord.Member],
+    channel: Optional[
+        Union[
+            discord.TextChannel,
+            discord.DMChannel,
+            discord.GroupChannel,
+            discord.User,
+            discord.Member,
+        ]
+    ] = None,
+    guild: Optional[discord.Guild] = None,
+) -> str:
+    """Formats a log message for a user performing some action.
+
+    Parameters
+    -----------
+    action: str
+    A string describing the action that the user performed.
+
+    user: Union[discord.User, discord.Member]
+    The user to include information on in the log message.
+
+    channel: Union[
+        discord.TextChannel,
+        discord.DMChannel,
+        discord.GroupChannel,
+        discord.User,
+        discord.Member,
+    ]
+    If not `None`, information about the channel will be included in the log
+    message.
+
+    guild: Optional[discord.Guild]
+    If not `None`, information about the guild will be included in the log
+    message.
+    """
+    log_msg = f"{user} [{user.id}]"
+
+    if guild is not None or channel is not None:
+        log_msg += " in"
+
+        if guild is not None:
+            log_msg += f' guild "{guild}" [{guild.id}]\'s channel'
+
+        if channel is not None:
+            if isinstance(channel, discord.TextChannel) and channel.category:
+                log_msg += f' "{channel.category}/{channel}" [{channel.id}]'
+            else:
+                log_msg += f' "{channel}" [{channel.id}]'
+
+    log_msg += f" {action}"
+    return log_msg

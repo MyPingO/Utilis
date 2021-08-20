@@ -2,9 +2,12 @@ from core import client
 from utils import fmt
 
 import discord
+import logging
+import traceback
 from pathlib import Path
 from enum import Enum
 from importlib import import_module
+from abc import ABC, abstractmethod
 from typing import Union, Optional
 
 
@@ -21,7 +24,7 @@ class Bot_Command_Category(Enum):
     NONE = "Misc."
 
 
-class Bot_Command:
+class Bot_Command(ABC):
     """Represents a command the bot can run.
 
     Attributes
@@ -44,14 +47,18 @@ class Bot_Command:
     """
 
     name: str = ""
-
     short_help: str = "No info on this command."
-
     long_help: str = "No information available for this command."
-
     aliases: list[str] = []
-
     category: Bot_Command_Category = Bot_Command_Category.NONE
+    log: logging.Logger
+
+    def __init_subclass__(cls) -> None:
+        cls.log = logging.getLogger(f"commands.{cls.name}")
+
+    @abstractmethod
+    async def run(self, msg: discord.Message, args: str):
+        """The function to be run when the command is called."""
 
     def get_help(
         self, user: Optional[Union[discord.User, discord.Member]], args: Optional[str]
@@ -97,10 +104,6 @@ class Bot_Command:
         Can be `None` to represent the 'default' permission for most users.
         """
         return True
-
-    async def run(self, msg: discord.Message, args: str):
-        """The function to be run when the command is called."""
-        pass
 
     async def on_ready(self):
         """The function to be run when the bot is ready for operation."""
@@ -422,17 +425,27 @@ class Bot_Commands:
             return False
 
     async def call(self, command: Bot_Command, msg: discord.Message, args: str) -> None:
-        """A wrapper function that calls a command and sends an error message
-        to a message's channel if it fails.
+        """A wrapper function that calls a command and logs it, logging and
+        sending an error message to a message's channel if it fails.
         """
         try:
+            log_action = f'called command "{command}" '
+            if args:
+                log_action += f"with args: {fmt.escape_newlines(args)}"
+            else:
+                log_action += f"without args"
+            command.log.info(
+                fmt.get_user_log(log_action, msg.author, msg.channel, msg.guild)
+            )
             await command.run(msg, args)
         except Exception as e:
+            command.log.error(
+                f"{type(e).__name__}: {e}\n"
+                + "".join(traceback.format_exception(None, e, e.__traceback__))
+            )
             if not client.is_closed():
                 try:
-                    error_message = fmt.format_maxlen(
-                        "Error executing `{}`", command
-                    )
+                    error_message = fmt.format_maxlen("Error executing `{}`", command)
                     await msg.channel.send(error_message, delete_after=7)
                 except Exception as e2:
                     print("Error sending error message:", e2, sep="\n")
