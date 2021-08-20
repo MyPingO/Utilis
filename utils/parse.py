@@ -111,3 +111,36 @@ def split_args(args: str, treat_comma_as_space: bool = False) -> list[str]:
     ret = [_re_remove_escaped_quote.sub(r'\1"', s).replace("\\\\", "\\") for s in ret]
 
     return ret
+
+
+re_time = re.compile(
+    r"(?P<hour>\d\d?)(?::(?P<minute>\d{2}))?\s*(?P<period>[ap]m)?", re.IGNORECASE
+)
+
+
+def str_to_time(s: str) -> datetime.time:
+    """Return s as a timezone naive time, or raise an exception on failure.
+    Only handles hours and minutes. Does not handle seconds.
+    """
+    m = re_time.fullmatch(s.strip())
+    if m is None:
+        raise ValueError(f'Could not parse"{s}" as time.')
+
+    minute = int(m.group("minute")) if m.group("minute") else 0
+
+    hour = int(m.group("hour"))
+    if m.group("period") is not None:
+        is_am = m.group("period").casefold() == "am"
+        if is_am:
+            # Handle AM times
+            if hour == 12:
+                # Change 12am to midnight
+                hour = 0
+            elif hour > 12:
+                raise ValueError(f"Can not have an AM time after 12.")
+        else:
+            # Handle PM times
+            if hour < 12:
+                hour += 12
+
+    return datetime.time(hour, minute)
