@@ -1,3 +1,4 @@
+import datetime
 import re
 
 _re_arg_splitter = re.compile(
@@ -114,7 +115,7 @@ def split_args(args: str, treat_comma_as_space: bool = False) -> list[str]:
 
 
 re_time = re.compile(
-    r"(?P<hour>\d\d?)(?::(?P<minute>\d{2}))?\s*(?P<period>[ap]m)?", re.IGNORECASE
+    r"(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?\s*(?P<period>[ap]m)?", re.IGNORECASE
 )
 
 
@@ -144,3 +145,84 @@ def str_to_time(s: str) -> datetime.time:
                 hour += 12
 
     return datetime.time(hour, minute)
+
+
+_re_month_name_date = re.compile(
+    r"(?P<month>[a-z]{3,9})\s+(?P<day>\d{1,2})(?:(?:(?:\s*,\s*)|(?:\s*))(?P<year>(?:\d{4})|(?:\d{2}))$)?",
+    re.IGNORECASE,
+)
+
+
+def _auto_set_date_year(d: datetime.date) -> datetime.date:
+    """For dates without years, changes the year from the default of 1900 to
+    the current year or next year, depending on whether the month and day have
+    passed the current year or not.
+    """
+    today = datetime.date.today()
+    d = d.replace(year=today.year)
+    if d < today:
+        d = d.replace(year=d.year + 1)
+    return d
+
+
+def str_to_date(s: str, require_year: bool = False) -> datetime.date:
+    """Return s as a date, or raise an exception on failure. Function assumes
+    month/day/year format and is case and whitespace insensitive.
+
+    Examples of valid formats for September 30th, 2021:
+      9/30/21
+      9/30/2021
+      09/30/21
+      09/30/2021
+      September 30 21
+      September 30, 21
+      September 30 2021
+      September 30, 2021
+      Sep 31 21
+      Sep 31, 21
+      Sep 31 2021
+      Sep 31, 2021
+
+    If `require_year` is `False`, then the year can be omitted. If the current
+    date is before the month and day given, then the year will be set to the
+    current year. Otherwise, the year will be set to the next year.
+    """
+    s = s.strip()
+    # Try to parse date as month/day/year
+    for format_code in ("%m/%d/%y", "%m/%d/%Y"):
+        try:
+            return datetime.datetime.strptime(s, format_code).date()
+        except Exception:
+            pass
+    if not require_year:
+        # Try to parse date as month/day
+        try:
+            return _auto_set_date_year(datetime.datetime.strptime(s, "%m/%d").date())
+        except Exception:
+            pass
+    # Try to parse date as written month then day and possibly year
+    m = _re_month_name_date.fullmatch(s)
+    if m:
+        if m.group("year"):
+            parse_date = f"{m.group('year')} {m.group('month')} {m.group('day')}"
+            # Try to parse date
+            year_fmt = "%y" if len(m.group("year")) == 2 else "%Y"
+            for month_fmt in ("%b", "%B"):
+                format_code = f"{year_fmt} {month_fmt} %d"
+                try:
+                    return datetime.datetime.strptime(parse_date, format_code).date()
+                except Exception:
+                    pass
+        elif not require_year:
+            parse_date = f"{m.group('month')} {m.group('day')}"
+            today = datetime.date.today()
+
+            for month_fmt in ("%b", "%B"):
+                try:
+                    format_code = f"{month_fmt} %d"
+                    return _auto_set_date_year(
+                        datetime.datetime.strptime(s, format_code).date()
+                    )
+                except Exception:
+                    pass
+    raise ValueError(f'Could not parse "{s}" as date.')
