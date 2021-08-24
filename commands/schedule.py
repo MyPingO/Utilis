@@ -1,8 +1,10 @@
 from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from pathlib import Path
-from utils import find
+from utils import find, get
 from utils.paged_message import Paged_Message
+from utils import parse
 from typing import Optional, Union
+from core import client
 
 import datetime
 import json
@@ -12,19 +14,17 @@ import asyncio
 class Schedule_Command(Bot_Command):
     name = "schedule"
 
-    session_log = Path("data/scheduled_sessions.json")
+    session_log = Path("data/schedule/scheduled_sessions.json")
 
     short_help = "Posts the server's schedule or schedules an event."
 
     long_help = f"""Schedule an event for the specified date and time.
-    Arguments:
-    `Type`  [event, edit, (year)]
-    `Time`  Formatted as **MM/DD/YY HH:MM AM/PM**
-    `Title` Descriptive name for the event. Will also be the name of the role to be pinged
+    Usage:
+    **schedule** [*year*]
+    **schedule edit** *title*
+    **schedule event** *date time title*
 
-    If all arguments are omitted, the schedule for this server is posted.
-    All participants will be pinged by a designated role 5 minutes in advance
-    as a reminder, as well as when the event starts.
+    Format date and time as *`MM/DD/YY HH:MM AM/PM`*
     """
 
     category = Bot_Command_Category.COMMUNITY
@@ -32,7 +32,7 @@ class Schedule_Command(Bot_Command):
     #discord's global mentions or command-specific keywords
     restricted = ["all", "here", "everyone"]
 
-    #EST time zone
+    #the bot's local time zone
     tz = datetime.timezone(datetime.timedelta(hours=-4))
 
     #create a log file at the specified Path if it doesn't already exist
@@ -47,228 +47,254 @@ class Schedule_Command(Bot_Command):
         #gets current server
         guild = msg.author.guild
         #gets a string of the server's id
-        id_num = str(guild.id)
+        guild_id = str(guild.id)
         #gets current channel
         channel = msg.channel
 
         #if this server is not in the log file, add it
-        if id_num not in self.sessions:
-            self.sessions[id_num] = {}
+        if guild_id not in self.sessions:
+            self.sessions[guild_id] = {}
             self.save()
 
         #if user doesn't include any arguments, post the server's schedule
         if not args:
             await self.post_schedule(channel, guild, m=msg.author)
+
         #if user requests the schedule for a specific year
         elif args.isdigit():
             if int(args) >= datetime.datetime.now().year:
                 await self.post_schedule(channel, guild, args, m=msg.author)
+
         #admins or event creators can remove scheduled events
         elif args.casefold().startswith("remove"):
             #if no events were specified to be removed
             if not args[len("remove"):].strip():
                 return
+            #clearing the schedule
+            if args[len("remove"):].strip().casefold() == "all":
+                await self.remove(msg, remove_all = True)
+                await self.post_schedule(channel, guild, m=msg.author)
+                return
             #attempt to remove each specified event
-            for arg in args[len("remove"):].split(","):
-                await self.remove(msg, arg.strip().casefold())
+            for arg in args[len("remove"):].casefold().strip().split(","):
+                event = self.get_event(arg.strip(), guild_id)
+                #if an event is found, remove it
+                if event is not None:
+                    #only the event creator or admins can remove events
+                    if  msg.author.id == event['author'] or msg.author.guild_permissions.administrator:
+                        await self.remove(msg, event)
+                    #an unauthorized user attempted to delete the event
+                    else:
+                        embed = discord.Embed(
+                            title="[ERROR]",
+                            color=discord.Color.red(),
+                            description="**You do not have permission to remove this event.**"
+                        )
+                        await channel.send(embed=embed)
+                        return
+
             #post the updated schedule
             await self.post_schedule(channel, guild, m=msg.author)
 
         #scheduling a new event
         elif args.casefold().startswith("event"):
+            error_embed = discord.Embed(color=discord.Color.red())
+            error_embed.set_author(
+                name=f"[NEW EVENT]",
+                icon_url=msg.author.avatar_url_as(format='png')
+            )
+            embed = error_embed.copy()
+            embed.color = discord.Color.gold()
+
             if not args[len("event"):].strip():
-                await channel.send("No event details were specified.")
-                return
-            parsed_args = args.strip().split(" ", 4)
-            #checks that user entered a properly formatted date/time
-            try:
-                #concatenate the user input for the date and time of the event
-                time = " ".join(parsed_args[1:4])
-                #create an iso formatted datetime object from time
-                session = datetime.datetime.strptime(time, '%m/%d/%y %I:%M %p').isoformat(sep=" ")
-                #convert session into a datetime object again with the correct timezone
-                session = datetime.datetime.fromisoformat(session).replace(tzinfo=self.tz)
-            except (ValueError, IndexError):
-                print("The date/time was not formatted properly. Please follow the format `MM/DD/YY HH:MM AM/PM`.")
-                await channel.send("The date/time was not formatted properly. Please follow the format `MM/DD/YY HH:MM AM/PM`.")
+                error_embed.description = "An event title was not provided."
+                await channel.send(embed=error_embed)
                 return
 
-            #verify the user enters a future date/time
-            if session < datetime.datetime.now(tz=self.tz):
-                print("This date/time has already passed. Please enter a valid date/time.")
-                await channel.send("This date/time has already passed. Please enter a valid date/time")
+            #validate the title
+            parsed_args = self.validate(guild_id, title=args[len("event"):].strip())
+            if parsed_args[0] is not None:
+                title = parsed_args[0]
+            else:
+                error_embed.description = parsed_args[3]
+                await channel.send(embed=error_embed)
                 return
 
-            #make sure the event has a valid title
-            try:
-                title = parsed_args[4].strip()
-
-                #check that there isn't already a role with the same name as the event
-                if title.casefold() in (role.name.casefold() for role in guild.roles):
-                    await channel.send("This title is restricted. Please choose a different one.")
-                    return
-                #check that the title isn't a restricted keyword
-                if title.casefold() in (mention.casefold() for mention in self.restricted):
-                    await channel.send("This title is restricted. Please choose a different one.")
-                    return
-                #make sure the title is within a role name's max length
-                if len(title) > 100:
-                    await channel.send("Title must be 100 characters or fewer in length.")
-                    return
-
-            except IndexError:
-                print("No title was provided")
-                await channel.send("No title was provided")
+            #prompt the user for an event date
+            embed.description = f"**Please enter a date for `{title}`**"
+            prompt = await channel.send(embed=embed)
+            date = (await get.reply(msg.author, channel, prompt)).content
+            parsed_args = self.validate(guild_id, date=date)
+            if parsed_args[1] is None:
+                error_embed.description = parsed_args[3]
+                await channel.send(embed=error_embed)
                 return
+            date = parsed_args[1]
 
-            #send a message asking for members to react to join the event
-            message = await channel.send(f"React to this message to be pinged for `{title}` at `{time}`!")
-            #create a dictionary of the event details
-            event = {"name": title, "time": str(session), "msg_id": message.id}
-            #if there is an error logging the event, delete the message requesting participants
-            try:
-                await self.log_session(id_num, event)
-            except Exception as e:
-                print(e)
-                await message.delete()
+            #prompt the user for an event time
+            embed.description = f"**Please enter a time for `{title}`**"
+            prompt = await channel.send(embed=embed)
+            time = (await get.reply(msg.author, channel, prompt)).content
+            parsed_args = self.validate(guild_id, time=time)
+            if parsed_args[2] is None:
+                error_embed.description = parsed_args[3]
+                await channel.send(embed=error_embed)
+                return
+            time = parsed_args[2]
+
+            #combine the date and time to get a datetime object
+            dt = datetime.datetime.combine(date, time)
+            #make sure the time is in the future
+            if dt.astimezone(tz=self.tz) < datetime.datetime.now(tz=self.tz):
+                error_embed.description = "This time has already passed."
+                await channel.send(embed=error_embed)
+                return
 
             #creates a role to ping participants for this event
             role = await guild.create_role(name=title)
+            #send a message asking for members to react to join the event
+            embed.title = role.name
+            embed.color = discord.Color.blue()
+            embed.description = f"React to this message to be pinged for {role.mention} on **<t:{int(dt.timestamp())}:F>**!"
+            message = await channel.send(embed=embed)
 
-            #sleep until 5 minutes before the event to notify participants ahead of time
-            await discord.utils.sleep_until(session - datetime.timedelta(minutes=5))
-
-            #verify this event still exists
-            if not await self.exists(id_num, event):
-               return
-
-            #assign all participants the designated role for this event
-            await self.react_for_role(message, role)
-
-            #creates and sends an embed reminder for the event
-            reminder = discord.Embed(color=discord.Color.random())
-            reminder.add_field(
-                name="REMINDER",
-                value=f"""**{title.upper()}** will be starting soon!
-                You can still join before it starts by reacting to [this message]({message.jump_url})!""",
-                inline=False
-            )
-            m1 = await channel.send(f"{role.mention}", embed=reminder)
-
-            #wait for event to start
-            await discord.utils.sleep_until(session)
-
-            #check for any last minute participants
-            await self.react_for_role(message, role)
-
-            #send a final reminder that the event has started
-            reminder.clear_fields()
-            reminder.add_field(
-                name=f"{title.upper()}",
-                value="THE EVENT HAS STARTED! JOIN NOW!!",
-                inline=False
-            )
-            m2 = await channel.send(f"{role.mention}", embed=reminder)
-
-            #leave event posted for 10 minutes before deleting it
-            await asyncio.sleep(600)
-
-            #delete the role assigned to this event
-            await role.delete()
-            #delete the event from the log file
-            await self.remove(msg, title)
-            #removes the deleted role mention from the reminder messages
-            await m1.edit(content=None)
-            await m2.edit(content=None)
-
-        #TODO allows admins to schedule announcements
+            #create a dictionary of the event details
+            event = {
+                "name": title,
+                "datetime": str(dt),
+                "msg_id": message.id,
+                "role_id": role.id,
+                "author": msg.author.id
+            }
+            await self.schedule_event(msg.author, channel, event)
+            
+        #TODO allows admins to schedule announcements, requires setting an announcement channel
         elif args.casefold().startswith("announcement"):
             if msg.author.guild_permissions.administrator:
                 pass
                 #await channel.send("@everyone", embed=)
             pass
-        #TODO the event creator or admins can edit the details of an event
+
+        #edits a specified event
         elif args.casefold().startswith("edit"):
-            #get the title of the event trying to be edited
-            #event = args[len("edit"):].strip()
-            #try to edit the event if one was specified
-            #if event:
-                #await edit_event(msg.author, args[len("edit"):])
-            pass
+            embed = discord.Embed(color=discord.Color.red())
+            embed.set_author(
+                name=f"[EDIT EVENT]",
+                icon_url=msg.author.avatar_url_as(format='png')
+            )
+            #try to find a scheduled event with the specified name
+            title = args[len("edit"):].strip()
+            if not title:
+                embed.description = "**An event title was not provided.**"
+                print("No event provided")
+                await channel.send(embed=embed)
+                return
+            event = self.get_event(title, guild_id)
+            if event is not None:
+                print(f"Editing event `{title}`")
+                if msg.author.id == event['author'] or msg.author.guild_permissions.administrator:
+                    await self.edit_event(msg.author, event, channel, 180)
+                else:
+                    embed.description = f"**You do not have permission to edit this event.**"
+                    await channel.send(embed=embed)
+            else:
+                embed.description = f"**An event with the title `{title}` could not be found**"
+                print(f"No event named {title}")
+                await channel.send(embed=embed)
+
         #catch invalid event types or incorrect command usage
         else:
-            await channel.send("Please enter a valid event type.")
+            embed = discord.Embed(
+                title="[ERROR]",
+                color=discord.Color.red(),
+                description="**Please enter a valid event type**"
+            )
+            await channel.send(embed=embed)
 
 
 
 
 
-    #deletes the specified event from this server's schedule
-    async def remove(self, msg: discord.Message, title: str):
-        #get the guild's id as a string and the channel the message was sent in
-        guild_id = str(msg.guild.id)
-        channel = msg.channel
-
+    #returns the dictionary of the event details if it exists
+    def get_event(self, name: str, guild_id: str):
+        with self.session_log.open("r") as file:
+            self.sessions = json.load(file)
         for year, months in self.sessions[guild_id].copy().items():
             for month, items in months.copy().items():
-                #admins can clear the schedule
-                if title == "all" and msg.author.guild_permissions.administrator:
-                    for item in items:
-                        #delete the role assigned to this event
-                        role = await find.role(channel, item["name"])
-                        if role is not None:
-                            await role.delete()
-                        #remove the event from the log file
-                        self.sessions[guild_id][year][month].remove(item)
-                        self.save()
+                for item in items:
+                    if item['name'].casefold() == name.casefold():
+                        return item
+        return None
 
-                        #delete the message asking for reactions to join this event
-                        try:
-                            m = await channel.fetch_message(item["msg_id"])
-                            await m.delete()
-                        except discord.NotFound as dnf:
-                            print(dnf)
-                            continue
 
-                    self.sessions[guild_id] = {}
-                    self.save()
-                    return
-                #removes the specified events from the schedule
+
+
+
+    #validates the passed event fields
+    def validate(
+        self,
+        guild_id: str,
+        title: Optional[str] = None,
+        date: Optional[str] = None,
+        time: Optional[str] = None
+    ):
+        """
+        Parameters
+        ----------
+
+        guild_id: str
+        A string containing the id of the guild.
+
+        title: Optional[str]
+        The title of the event. Required if date and time are None.
+
+        date: Optional[str]
+        The date of the event. Required if title and time are None.
+
+        time: Optional[str]
+        The time of the event. Reqiuired if title and date are None.
+        """
+
+        #list to return, respectively storing title, date, time and an error message if any
+        ret = [None] * 3 + ['']
+
+        #make sure the event has a valid title
+        if title is not None:
+            #check that the title is unique
+            if self.get_event(title, guild_id) is not None:
+                ret[3] = "An event with this title already exists. "
+            #check that the title isn't a restricted keyword
+            elif title.casefold() in (mention.casefold() for mention in self.restricted):
+                ret[3] = "This title is restricted. Please choose a different one. "
+            #make sure the title is within a role name's max length
+            elif len(title) > 100:
+                ret[3] = "Title must be 100 characters or fewer in length. "
+            #if title passes all checks, set ret[0] = to title
+            else:
+                ret[0] = title
+
+        #checks that user entered a properly formatted date
+        if date is not None:
+            try:
+                date = parse.str_to_date(date)
+                if date < datetime.date.today():
+                    ret[3] = "This date has already passed. "
                 else:
-                    event = next((item for item in items if item["name"].casefold() == title), None)
-                    #if an event with the title is found, remove it
-                    if event:
-                        #try to get the message asking for reactions to join this event
-                        try:
-                            m = await msg.channel.fetch_message(event["msg_id"])
-                        except discord.NotFound as dnf:
-                            print(dnf)
+                    ret[1] = date
+            except ValueError as ve:
+                print(ve)
+                ret[3] = "Invalid event date. Please follow the format `MM/DD/YY`. "
 
-                        year = event["time"][:4]
-                        month = event["time"][5:7]
-                        #only the event creator or admins can remove events
-                        if  msg.author.id == m.author.id or msg.author.guild_permissions.administrator:
-                            #remove the event from the log file
-                            self.sessions[guild_id][year][month].remove(event)
-                            self.save()
-                            #delete the message requesting participants
-                            await m.delete()
-                            #delete the role assigned to this event
-                            role = await find.role(channel, event["name"])
-                            if role:
-                                await role.delete()
-                        #an unauthorized user attempted to delete th
-                        else:
-                            await channel.send("You do not have permission to remove this event")
-                #if a month is empty, remove it from the log file
-                if not self.sessions[guild_id][year][month]:
-                    self.sessions[guild_id][year].pop(month)
-                    self.save()
-            #if a year is empty, remove it from the log file
-            if not self.sessions[guild_id][year]:
-                self.sessions[guild_id].pop(year)
-                self.save()
-        self.save()
+        #checks that user entered a properly formatted time
+        if time is not None:
+            try:
+                time = parse.str_to_time(time)
+                ret[2] = time
+            except ValueError as ve:
+                print(ve)
+                ret[3] = "Invalid event time. Please follow the format `HH:MM AM/PM`. "
+
+        return ret
 
 
 
@@ -278,20 +304,24 @@ class Schedule_Command(Bot_Command):
     async def react_for_role(self, msg: discord.Message, role: discord.Role):
         #get an updated reference to the reaction message
         msg = await msg.channel.fetch_message(msg.id)
-        #get the message's reactions
+
+        #get a list of users who reacted
+        users = []
         for reaction in msg.reactions:
-            #make a list of the Users who reacted to the message
-            users = await reaction.users().flatten()
-            #assigns the role to all users who reacted
-            for user in users:
-                #convert User object into Member
-                member = msg.guild.get_member(user.id)
-                #ignore any bots that react
-                if member.bot:
-                    continue
-                #assign the member the role if they don't already have it
-                if role not in member.roles:
-                    await member.add_roles(role)
+            users += await reaction.users().flatten()
+
+        #remove duplicate Users
+        users = set(users)
+
+        #assigns the role to all users who reacted
+        for user in users:
+            #convert User object into Member
+            member = msg.guild.get_member(user.id)
+            #ignore any bots that react
+            if member.bot:
+                continue
+            if role not in member.roles:
+                await member.add_roles(role)
 
 
 
@@ -301,11 +331,11 @@ class Schedule_Command(Bot_Command):
     def sort(self, guild_id: str):
         #sort by year
         self.sessions[guild_id] = dict(sorted(self.sessions[guild_id].items()))
-        #the key to sort events into chronological order
+
         def event_sort_key(event):
             return (
-                datetime.datetime.fromisoformat(event["time"]),
-                event["name"],
+                datetime.datetime.fromisoformat(event['datetime']),
+                event['name'],
             )
         for year in self.sessions[guild_id]:
             #sort by month
@@ -314,7 +344,7 @@ class Schedule_Command(Bot_Command):
                 #sort the month's events in chronological order
                 sorted_list = []
                 for item in sorted(self.sessions[guild_id][year][month], key=event_sort_key):
-                    dt = datetime.datetime.fromisoformat(item["time"]).replace(tzinfo=datetime.timezone.utc)
+                    dt = datetime.datetime.fromisoformat(item['datetime']).replace(tzinfo=datetime.timezone.utc)
                     sorted_list.append(item)
                 self.sessions[guild_id][year][month] = sorted_list
         self.save()
@@ -323,53 +353,402 @@ class Schedule_Command(Bot_Command):
 
 
 
-    #writes to the log file a dictionary containing the event's details
-    async def log_session(self, guild_id: str, event: dict):
-        #get the year of the event
-        year = event["time"][:4]
-        #get the month of the event
-        month = event["time"][5:7]
-        #make sure the year exists in the log file
-        if year not in self.sessions[guild_id]:
-            self.sessions[guild_id][year] = {month: [event]}
-        #make sure the month exists in the year
-        elif month not in self.sessions[guild_id][year]:
-            self.sessions[guild_id][year][month] = [event]
-        #append the event to the year and month
+    async def schedule_event(
+        self,
+        member: discord.Member,
+        channel: discord.TextChannel,
+        event_dict: dict
+    ):
+        """Schedules an event
+
+        Parameters
+        ----------
+        member: discord.Member
+        The member scheduling the event.
+
+        channel: discord.TextChannel
+        The channel to send the event info in.
+
+        event_dict: dict
+        A dictionary containing the event details.
+        """
+
+        guild = channel.guild
+        guild_id = str(guild.id)
+
+        #unpack the event dictionary
+        dt = datetime.datetime.fromisoformat(event_dict['datetime'])
+        message = await channel.fetch_message(event_dict['msg_id'])
+        role = guild.get_role(event_dict['role_id'])
+
+        #log the event
+        try:
+            year = dt.strftime('%Y')
+            month = dt.strftime('%m')
+            #make sure the year exists in the log file
+            if year not in self.sessions[guild_id]:
+                self.sessions[guild_id][year] = {month: [event_dict]}
+            #make sure the month exists in the year
+            elif month not in self.sessions[guild_id][year]:
+                self.sessions[guild_id][year][month] = [event_dict]
+            #append the event to the year and month
+            else:
+                self.sessions[guild_id][year][month].append(event_dict)
+            self.sort(guild_id)
+        except Exception as e:
+            print(e)
+            await message.delete()
+            if role is not None:
+                await role.delete()
+            return
+
+        #sleep until 5 minutes before the event to notify participants ahead of time
+        await discord.utils.sleep_until(dt.astimezone(tz=self.tz) - datetime.timedelta(minutes=5))
+
+        #verify this event still exists
+        if self.get_event(event_dict['name'], guild_id) is None:
+           return
+
+        #assign all participants the designated role for this event
+        await self.react_for_role(message, role)
+
+        #creates and sends an embed reminder for the event
+        reminder = discord.Embed(color=discord.Color.blue())
+        reminder.add_field(
+            name="REMINDER",
+            value=f"""**{event_dict['name'].upper()}** will be starting soon!
+            You can still join before it starts by reacting to [this message]({message.jump_url})!""",
+            inline=False
+        )
+        m1 = await channel.send(f"{role.mention}", embed=reminder)
+
+        #wait for event to start
+        await discord.utils.sleep_until(dt.astimezone(tz=self.tz))
+
+        #check for any last minute participants
+        await self.react_for_role(message, role)
+
+        #send a final reminder that the event has started
+        reminder.clear_fields()
+        reminder.add_field(
+            name=f"{event_dict['name'].upper()}",
+            value="THE EVENT HAS STARTED! JOIN NOW!!",
+            inline=False
+        )
+        m2 = await channel.send(f"{role.mention}", embed=reminder)
+
+        #leave event posted for 5 minutes before deleting it
+        await asyncio.sleep(300)
+
+        try:
+            #delete the role assigned to this event
+            await role.delete()
+            #delete the event from the log file
+            await self.remove(m1, event_dict)
+            #removes the deleted role mention from the reminder messages
+            await m1.edit(content=None)
+            await m2.edit(content=None)
+        except discord.HTTPException as httpe:
+            print(httpe)
+        except Exception as e:
+            print(e)
+
+
+
+
+
+    #deletes the specified event from this server's schedule
+    async def remove(
+        self,
+        msg: discord.Message,
+        event: Optional[dict] = None,
+        remove_all: bool = False
+    ):
+        """Removes the passed event from the log file and deletes its
+        associated role and reaction message.
+
+        Parameters
+        ----------
+        msg: discord.Message
+        A reference message to get the channel, guild and member who requested the
+        event removal.
+
+        event: Optional[dict]
+        A dictionary of the event being removed. Required if remove_all is False.
+
+        remove_all: bool
+        A boolean flag to indicate whether or not to clear the guild's schedule.
+        """
+        #get the guild's id as a string and the channel the message was sent in
+        guild_id = str(msg.guild.id)
+        channel = msg.channel
+
+        #admins can clear the schedule
+        if remove_all and msg.author.guild_permissions.administrator:
+            for year, months in self.sessions[guild_id].copy().items():
+                for month, items in months.copy().items():
+                    for item in items:
+                        #delete the role assigned to this event
+                        role = msg.guild.get_role(item['role_id'])
+                        if role is not None:
+                            await role.delete()
+                        #remove the event from the log file
+                        self.sessions[guild_id][year][month].remove(item)
+                        self.save()
+
+                        #delete the message asking for reactions to join this event
+                        try:
+                            m = await channel.fetch_message(item['msg_id'])
+                            await m.delete()
+                        except discord.NotFound as dnf:
+                            print(dnf)
+                            continue
+
+            self.sessions[guild_id] = {}
+            self.save()
+        #removes the specified events from the schedule
         else:
-            self.sessions[guild_id][year][month].append(event)
-        #sort the events
-        self.sort(guild_id)
+            if event is not None:
+                dt = datetime.datetime.fromisoformat(event['datetime'])
+                year = dt.strftime('%Y')
+                month = dt.strftime('%m')
+                #try to delete the message asking for reactions to join this event
+                try:
+                    m = await channel.fetch_message(event['msg_id'])
+                    await m.delete()
+                except discord.NotFound as dnf:
+                    print(dnf)
+                    pass
+
+                #remove the event from the log file
+                self.sessions[guild_id][year][month].remove(event)
+                if not self.sessions[guild_id][year][month]:
+                    self.sessions[guild_id][year].pop(month)
+                if not self.sessions[guild_id][year]:
+                    self.sessions[guild_id].pop(year)
+                self.save()
+                #delete the role assigned to this event
+                role = msg.guild.get_role(event['role_id'])
+                if role is not None:
+                    await role.delete()
 
 
 
 
 
-    #verifies that this event still exists
-    async def exists(self, guild_id: str, event: dict) -> bool:
-        #update self.sessions
-        with self.session_log.open("r") as file:
-            self.sessions = json.load(file)
-        #get the year of the event
-        year = event["time"][:4]
-        #get the month of the event
-        month = event["time"][5:7]
-        #if the event still exists in the log, return True
-        if event in self.sessions[guild_id][year][month]:
-            return True
-        print(f"{title} no longer exists")
-        return False
+    #allow event creator to edit edit their scheduled event
+    async def edit_event(
+            self,
+            author: discord.Member,
+            event: dict,
+            channel: discord.TextChannel,
+            timeout: int = 90
+        ):
+        """
+        Parameters
+        ----------
+        author: discord.Member
+        The member requesting the edit.
+
+        event: dict
+        The dictionary containing the information of the event being edited.
+
+        channel: discord.TextChannel
+        The channel to send the edit messages to.
+
+        timeout: int
+        Number of seconds to wait for a user response before returning and exiting the function.
+        """
+
+        fields = {
+            "title_emoji": "🏷",
+            "date_emoji": "🗓",
+            "time_emoji": "⏰"
+        }
+        choice = {
+            "confirm_emoji": "✅",
+            "cancel_emoji": "❌"
+        }
+
+        title = event['name']
+        dt = datetime.datetime.fromisoformat(event['datetime'])
+
+        #create embed explaining how to edit the event
+        embed = discord.Embed(
+            color=discord.Color.gold(),
+            description=f"""
+            Editing `{event['name']}`. Which fields would you like to edit?
+            {fields['title_emoji']} `Title`: {title}
+            {fields['date_emoji']} `Date`: <t:{int(dt.timestamp())}:D>
+            {fields['time_emoji']} `Time`: <t:{int(dt.timestamp())}:t>
+
+            React with {choice['confirm_emoji']} to confirm your choices, {choice['cancel_emoji']} to cancel.
+            """
+        )
+        embed.set_author(
+            name="[EDIT EVENT]",
+            icon_url=author.avatar_url_as(format='png')
+        )
+        guild_id = str(channel.guild.id)
+        field_request = await channel.send(embed=embed)
+
+        for emoji in fields:
+            await field_request.add_reaction(fields[emoji])
+        for emoji in choice:
+            await field_request.add_reaction(choice[emoji])
+
+        try:
+            reaction, reactor = await client.wait_for(
+                "reaction_add",
+                check=lambda r, u: r.message == field_request
+                and r.emoji in (choice.values())
+                and u == author,
+                timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            await field_request.clear_reactions()
+            print("Timed out waiting for user.")
+            return
 
 
+        #cancel edit request
+        if reaction.emoji == choice['cancel_emoji']:
+            print(f"Cancelled edits to {event['name']}")
+            #remove all reactions from the message
+            await field_request.clear_reactions()
+            embed.color = discord.Color.blue()
+            embed.description = f"**Cancelled edits to `{event['name']}`**"
+            await channel.send(embed=embed)
+            return
 
+        #get updated reference to field_request message
+        field_request = await field_request.channel.fetch_message(field_request.id)
+        #get which fields have been selected for editing
+        confirmed_fields = []
+        for r in field_request.reactions:
+            if r.emoji in fields.values() and author in await r.users().flatten():
+                confirmed_fields += r.emoji
+        print(confirmed_fields)
 
+        await field_request.clear_reactions()
+        #if no fields were chosen for editing
+        if not confirmed_fields:
+            print("No fields chosen")
+            embed.color = discord.Color.blue()
+            embed.description = f"**No fields were selected. Cancelling edit request.**"
+            await channel.send(embed=embed)
+            return
 
-    #formats a datetime into a string
-    def pretty_datetime_str(self, dt: datetime.datetime):
-        if dt.year == datetime.datetime.now().year:
-            return dt.strftime(r"%m/%d %I:%M %p")
+        #make a copy of the event to contain the edited info
+        new_event = event.copy()
+        old_dt = dt
+
+        error_embed = embed.copy()
+        error_embed.color = discord.Color.red()
+        error_embed.description = f"Cancelling all edits to `{title}`."
+
+        edit_desc = f"**Successfully made edits to `{title}`.\nChanged:**"
+
+        if fields['title_emoji'] in confirmed_fields:
+            embed.description = f"""**Please enter a new title for `{title}`.**
+            Current title: `{title}`"""
+            msg = await channel.send(embed=embed)
+
+            #prompt user for a new title
+            title = (await get.reply(author, channel, msg)).content
+            parsed_args = self.validate(guild_id, title=title)
+            if parsed_args[0] is None:
+                error_embed.description = parsed_args[3] + error_embed.description
+                await channel.send(embed=error_embed)
+                return
+            title = parsed_args[0]
+            edit_desc += f"\n{fields['title_emoji']} `Title`: `{event['name']}` -> `{title}`"
+
+        if fields['date_emoji'] in confirmed_fields:
+            embed.description = f"""**Please enter a new date for `{title}`**
+            Current date: <t:{int(old_dt.timestamp())}:D>"""
+            msg = await channel.send(embed=embed)
+
+            #prompt user for a new date
+            date = (await get.reply(author, channel, msg)).content
+            parsed_args = self.validate(guild_id, date=date)
+            if parsed_args[1] is None:
+                error_embed.description = parsed_args[3] + error_embed.description
+                await channel.send(embed=error_embed)
+                return
+            date = parsed_args[1]
+
+            #replace the old date with the new date
+            dt = dt.replace(year=date.year, month=date.month, day=date.day)
+            edit_desc += f"\n{fields['date_emoji']} `Date`: <t:{int(old_dt.timestamp())}:D> -> <t:{int(dt.timestamp())}:D>"
+
+        if fields['time_emoji'] in confirmed_fields:
+            embed.description = f"""**Please enter a new time for `{title}`**
+            Current time: <t:{int(old_dt.timestamp())}:t>"""
+            msg = await channel.send(embed=embed)
+
+            #prompt user for a new time
+            time = (await get.reply(author, channel, msg)).content
+            parsed_args = self.validate(guild_id, time=time)
+            if parsed_args[2] is None:
+                error_embed.description = parsed_args[3] + error_embed.description
+                await channel.send(embed=error_embed)
+                return
+            time = parsed_args[2]
+
+            #make sure new time is in the future
+            dt = dt.replace(hour=time.hour, minute=time.minute)
+            if dt.astimezone(tz=self.tz) < datetime.datetime.now(tz=self.tz):
+                error_embed.description = "This time has already passed. " + error_embed.description
+                await channel.send(embed=error_embed)
+                return
+            edit_desc += f"\n{fields['time_emoji']} `Time`: <t:{int(old_dt.timestamp())}:t> -> <t:{int(dt.timestamp())}:t>"
+
+        new_event['name'] = title
+        new_event['datetime'] = str(dt)
+
+        #delete the old event
+        year = old_dt.strftime('%Y')
+        month = old_dt.strftime('%m')
+        self.sessions[guild_id][year][month].remove(event)
+        if not self.sessions[guild_id][year][month]:
+            self.sessions[guild_id][year].pop(month)
+        if not self.sessions[guild_id][year]:
+            self.sessions[guild_id].pop(year)
+        self.save()
+
+        #update the role for this event
+        role = channel.guild.get_role(new_event['role_id'])
+        if role is None:
+            role = await channel.guild.create_role(name=title)
+            new_event['role_id'] = role.id
         else:
-            return dt.strftime(r"%m/%d/%y %I:%M %p")
+            await role.edit(name=title)
+
+        #edit the reaction message, if not found, create a new one
+        try:
+            m = await channel.fetch_message(new_event['msg_id'])
+            e = m.embeds[0]
+            e.title = title
+            e.description = f"React to this message to be pinged for {role.mention} on **<t:{int(dt.timestamp())}:F>**!"
+            await m.edit(embed=e)
+        except discord.NotFound as dnf:
+            print(dnf)
+            #send a message asking for members to react to join the event
+            react_embed = discord.Embed(
+                title=title,
+                color=discord.Color.blue(),
+                description=f"React to this message to be pinged for {role.mention} on **<t:{int(dt.timestamp())}:F>**!"
+            )
+            message = await channel.send(embed=react_embed)
+            new_event['msg_id'] = message.id
+
+        edit_embed = embed.copy()
+        edit_embed.color = discord.Color.blue()
+        edit_embed.description = edit_desc
+        await channel.send(embed=edit_embed)
+        #schedule a new event with the edited information
+        await self.schedule_event(author, channel, new_event)
 
 
 
@@ -386,15 +765,19 @@ class Schedule_Command(Bot_Command):
         """
         Parameters
         -----------
-        channel:
-            The server's designated schedule channel.
-            All messages related to scheduled events are sent in this channel
-        guild:
-            The server from which the schedule is being requested.
-        year:
-            Optional. A specific year that a schedule is being requested for.
-        m:
-            Optional. The member or user requesting the schedule.
+        channel: discord.TextChannel
+        The server's designated schedule channel.
+        All messages related to scheduled events are sent in this channel.
+
+        guild: discord.Guild
+        The server from which the schedule is being requested.
+
+        year: Optional[str]
+        A specific year that a schedule is being requested for.
+
+        m: Optional[Union[disord.User, discord.Member]]
+        The member or user requesting the schedule. If provided, only this 
+        user can turn the pages of the schedule if there are multiple pages.
         """
         #get all events scheduled for this server
         schedule = self.sessions[str(guild.id)]
@@ -428,7 +811,7 @@ class Schedule_Command(Bot_Command):
                     None,
                     lambda i: (
                         datetime.datetime.strptime(i, "%m").strftime("%B"),
-                        "\n".join(f"[{self.pretty_datetime_str(datetime.datetime.fromisoformat(event['time']).replace(tzinfo=datetime.timezone.utc))} - {event['name']}]({channel.get_partial_message(event['msg_id']).jump_url})" for event in schedule[i]),
+                        "\n".join(f"[<t:{int(datetime.datetime.fromisoformat(event['datetime']).timestamp())}> - {event['name']}]({channel.get_partial_message(event['msg_id']).jump_url})" for event in schedule[i]),
                         False
                     ),
                     m,
@@ -449,7 +832,7 @@ class Schedule_Command(Bot_Command):
                         None,
                         lambda i: (
                             datetime.datetime.strptime(i, "%m").strftime("%B"),
-                            "\n".join(f"[{self.pretty_datetime_str(datetime.datetime.fromisoformat(event['time']).replace(tzinfo=datetime.timezone.utc))} - {event['name']}]({channel.get_partial_message(event['msg_id']).jump_url})" for event in schedule[year][i]),
+                            "\n".join(f"[<t:{int(datetime.datetime.fromisoformat(event['datetime']).timestamp())}> - {event['name']}]({channel.get_partial_message(event['msg_id']).jump_url})" for event in schedule[year][i]),
                             False
                         ),
                         m,

@@ -16,7 +16,7 @@ class Mute_Command(Bot_Command):
 
     default_time = "10m"
 
-    mute_log = Path("data/mute_log.json")
+    mute_log = Path("data/mute/muted.json")
 
     short_help = "Mutes user for specified time"
 
@@ -99,6 +99,16 @@ class Mute_Command(Bot_Command):
                     )
                     await channel.send(embed=embed)
                     return
+
+                #cannot mute moderators
+                if member.guild_permissions.administrator:
+                    embed = discord.Embed(
+                        title="[ERROR] Cannot Mute Moderators",
+                        color=discord.Color.red()
+                    )
+                    await channel.send(embed=embed)
+                    return
+
                 #mute the member
                 await self.mute(member, unmute_at, channel, msg.author)
         #if user didnt enter any arguments

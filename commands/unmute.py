@@ -10,7 +10,7 @@ import datetime
 class Unmute_Command(Bot_Command):
     name = "unmute"
 
-    mute_log = Path("data/mute_log.json")
+    mute_log = Path("data/mute/muted.json")
 
     short_help = "Unmutes user"
 
@@ -157,13 +157,15 @@ class Unmute_Command(Bot_Command):
                     await m.remove_roles(mute)
                 except KeyError as ke:
                     print(f"KeyError: {ke}")
-                    #error if member is not logged to be muted
-                    embed.color = discord.Color.red()
-                    embed.set_author(
-                        name=f"[ERROR] {m} Is Not Muted",
-                        icon_url=m.avatar_url_as(format='png')
-                    )
-                    await channel.send(embed=embed)
+                    #if server_mute is active and not muted individually
+                    if log[str(author.guild.id)]['server']:
+                        #error if member is not logged to be muted
+                        embed.color = discord.Color.red()
+                        embed.set_author(
+                            name=f"[ERROR] Active Server-Mute",
+                            icon_url=m.avatar_url_as(format='png')
+                        )
+                        await channel.send(embed=embed)
                     return
                 embed.set_author(
                     name=f"[UNMUTE] {m}",
