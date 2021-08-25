@@ -16,6 +16,9 @@ class Echo_Command(Bot_Command):
 
     category = Bot_Command_Category.TOOLS
 
+    def can_run(self, location, member):
+        return member is not None and member.guild_permissions.administrator
+
     async def run(self, msg: discord.Message, args: str):
         if args:
             single_line_args = args.replace("\n", "\\n")
