@@ -2,7 +2,7 @@ import discord
 from typing import Union, Optional
 
 from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
-from utils import fmt
+from utils import fmt, std_embed
 from utils.paged_message import get_paged_footer, Paged_Message
 
 
@@ -94,8 +94,12 @@ class Help_Command(Bot_Command):
             commands.sort(key=lambda c: c.name.casefold())
 
             embed = discord.Embed(
-                title=f"Commands | {category.value}",
                 description=description,
+                color=std_embed.Colors.INFO,
+            )
+            embed.set_author(
+                name=f"Commands | {category.value}",
+                icon_url=user.avatar_url_as(format="png"),
             )
             for command in commands:
                 cmd_description = command.get_description()
@@ -110,8 +114,12 @@ class Help_Command(Bot_Command):
                     # If command info won't fit in the embed, create a new one
                     ret.append(embed)
                     embed = discord.Embed(
-                        title=f"Commands | {category.value}",
                         description=description,
+                        color=std_embed.Colors.INFO,
+                    )
+                    embed.set_author(
+                        name=f"Commands | {category.value}",
+                        icon_url=user.avatar_url_as(format="png"),
                     )
                 embed.add_field(name=command.name, value=cmd_description, inline=False)
             ret.append(embed)
@@ -192,8 +200,9 @@ class Help_Command(Bot_Command):
             await channel.send(embed=cmd_help)
             return
         # Otherwise, create an embed for the command and send it
-        help_embed = discord.Embed(title=f"__{cmd}__")
-        help_embed.description = cmd_help
+        help_embed = std_embed.get_info(
+            title=str(cmd), description=cmd_help, author=user
+        )
 
         # Add all of the commands aliases to the help embed if it has any
         if cmd.aliases:

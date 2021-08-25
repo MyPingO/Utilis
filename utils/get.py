@@ -4,6 +4,7 @@ from typing import Callable, Generic, Iterator, Optional, Sequence, TypeVar, Uni
 
 from core import client
 from .paged_message import Paged_Message
+from .std_embed import Colors
 
 
 _T = TypeVar("_T")
@@ -123,6 +124,7 @@ class User_Selection_Message(Paged_Message, Generic[_T]):
         description: Optional[str] = None,
         get_multiple_selections: bool = False,
         auto_delete_msg: bool = True,
+        color: Optional[Union[discord.Color, int]] = Colors.INPUT,
     ):
         """Parameters
         -----------
@@ -187,6 +189,7 @@ class User_Selection_Message(Paged_Message, Generic[_T]):
             lambda i: description,
             lambda option: next(fg),
             responder,
+            color=color,
         )
 
         super().__init__(embeds, responder, embed_editor=None)

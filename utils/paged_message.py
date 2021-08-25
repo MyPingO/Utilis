@@ -160,6 +160,7 @@ class Paged_Message:
                 [int, int, Optional[Union[discord.User, discord.Member]]], Optional[str]
             ]
         ] = get_paged_footer,
+        color: Optional[Union[discord.Color, int]] = None,
     ) -> list[discord.Embed]:
         """Creates a list of `discord.Embed`s from with one field per item
         from `items` with as many fields on one embed as possible.
@@ -209,6 +210,9 @@ class Paged_Message:
         `footer_generator` returns `None` then the embed will not be given a
         footer. If `footer_generator` is `None` then all embeds will not be
         given footers.
+
+        color: Optional[Union[discord.Color, int]]
+        The color of every embed. Left at the default color if `None`.
         """
 
         # Tries to estimate the longest possible length for a footer to so
@@ -224,10 +228,29 @@ class Paged_Message:
 
         # Create the first embed
         embed = discord.Embed()
+        if color is not None:
+            embed.color = color
+
+        if responder is not None:
+            # Set the author to the responder, if there is one. The author's
+            # name is later replaced with the title if there is one.
+            embed.set_author(
+                name=responder.name, icon_url=responder.avatar_url_as(format="png")
+            )
+
         if title_generator is not None:
             title = title_generator(0)
             if title is not None:
-                embed.title = title
+                if responder is not None:
+                    # If there is a responder, put the title where author
+                    # name should go instead to keep the title next to the
+                    # responder's icon.
+                    embed.set_author(
+                        name=title, icon_url=responder.avatar_url_as(format="png")
+                    )
+                else:
+                    embed.title = title
+
         if description_generator is not None:
             description = description_generator(0)
             if description is not None:
@@ -247,6 +270,8 @@ class Paged_Message:
                 # If the field can not fit in the embed, insert it into a new
                 # embed.
                 embed = discord.Embed()
+                if color is not None:
+                    embed.color = color
                 if title_generator is not None:
                     title = title_generator(len(embeds))
                     if title is not None:
