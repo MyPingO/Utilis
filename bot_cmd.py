@@ -1,5 +1,6 @@
 from core import client
-from utils import fmt
+from utils import fmt, std_embed
+from utils.errors import ReportableError
 
 import discord
 import logging
@@ -438,18 +439,51 @@ class Bot_Commands:
                 fmt.get_user_log(log_action, msg.author, msg.channel, msg.guild)
             )
             await command.run(msg, args)
+        except ReportableError as e:
+            if e.log:
+                self.log_error(command, e)
+            await self.send_error_message(msg.channel, command, str(e), msg.author)
         except Exception as e:
-            command.log.error(
-                f"{type(e).__name__}: {e}\n"
-                + "".join(traceback.format_exception(None, e, e.__traceback__))
+            self.log_error(command, e)
+            await self.send_error_message(
+                msg.channel,
+                command,
+                fmt.format_maxlen(
+                    "An internal error occured while executing `{}`", command
+                ),
+                msg.author,
             )
-            if not client.is_closed():
-                try:
-                    error_message = fmt.format_maxlen("Error executing `{}`", command)
-                    await msg.channel.send(error_message, delete_after=7)
-                except Exception as e2:
-                    print("Error sending error message:", e2, sep="\n")
-            raise e
+
+    def log_error(self, command: Bot_Command, e: Exception) -> None:
+        """Logs an error raised while executing a command."""
+        command.log.error(
+            f"{type(e).__name__}: {e}\n"
+            + "".join(traceback.format_exception(None, e, e.__traceback__))
+        )
+
+    async def send_error_message(
+        self,
+        channel: discord.abc.Messageable,
+        command: Bot_Command,
+        description: str,
+        author: Optional[Union[discord.User, discord.Member]],
+    ) -> Optional[discord.Message]:
+        """Sends an error message, printing and raising any errors that occur
+        in the process.
+        """
+        if not client.is_closed():
+            try:
+                return await std_embed.send_error(
+                    channel,
+                    title=fmt.format_maxlen("Error executing {}", command.name.upper()),
+                    description=description,
+                    author=author,
+                )
+            except Exception as e:
+                print("Error sending error message:", e, sep="\n")
+                raise e
+        else:
+            return None
 
 
 bot_commands = Bot_Commands()

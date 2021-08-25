@@ -3,6 +3,7 @@ from typing import Union, Optional
 
 from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from utils import fmt, std_embed
+from utils.errors import ReportableError
 from utils.paged_message import get_paged_footer, Paged_Message
 
 
@@ -174,19 +175,17 @@ class Help_Command(Bot_Command):
 
         # Check to see that a valid command was passed or found
         if not isinstance(cmd, Bot_Command):
-            error_message = fmt.format_maxlen(
-                "Could not find the command `{}`", command
+            raise ReportableError(
+                fmt.format_maxlen("Could not find the command `{}`", command)
             )
-            await channel.send(error_message, delete_after=7)
-            return
 
         # Make sure the user can run the command
         if not cmd.can_run(channel, user):
-            error_message = fmt.format_maxlen(
-                "You do not have permission to run `{}` here.", cmd.name
+            raise ReportableError(
+                fmt.format_maxlen(
+                    "You do not have permission to run `{}` here", cmd.name
+                )
             )
-            await channel.send(error_message, delete_after=7)
-            return
 
         # Remove whitespace from start and end of args
         if isinstance(args, str):
@@ -201,7 +200,7 @@ class Help_Command(Bot_Command):
             return
         # Otherwise, create an embed for the command and send it
         help_embed = std_embed.get_info(
-            title=str(cmd), description=cmd_help, author=user
+            title=f"Command Info: {cmd.name.upper()}", description=cmd_help, author=user
         )
 
         # Add all of the commands aliases to the help embed if it has any

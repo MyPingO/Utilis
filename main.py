@@ -12,7 +12,7 @@ from pathlib import Path
 
 from core import client
 from bot_cmd import bot_commands
-from utils import fmt
+from utils import fmt, std_embed
 
 bot_prefix = "!"
 
@@ -130,7 +130,12 @@ async def on_message(msg: discord.Message):
                     await bot_commands.call(help_command, msg, "")
                 else:
                     # If there is no help command, send an error message instead
-                    await msg.channel.send("No command specified.", delete_after=7)
+                    await std_embed.send_error(
+                        msg.channel,
+                        title="Error finding command",
+                        description="No command specified",
+                        author=msg.author,
+                    )
             else:
                 command = bot_commands.get_command(cmd_name, msg.guild)
                 if command is not None:
@@ -150,12 +155,15 @@ async def on_message(msg: discord.Message):
                                 msg.guild,
                             )
                         )
-                        error_message = fmt.format_maxlen(
-                            "You do not have permission to run `{}` here.", cmd_name
-                        )
-                        await msg.channel.send(
-                            error_message,
-                            delete_after=7,
+                        await std_embed.send_error(
+                            msg.channel,
+                            title=fmt.format_maxlen(
+                                "Error executing {}", cmd_name.upper()
+                            ),
+                            description=fmt.format_maxlen(
+                                "You do not have permission to run `{}` here", cmd_name
+                            ),
+                            author=msg.author,
                         )
                 else:
                     # If the command does not exist, send an error message
@@ -167,10 +175,13 @@ async def on_message(msg: discord.Message):
                             msg.guild,
                         )
                     )
-                    error_message = fmt.format_maxlen("No command `{}`", cmd_name)
-                    await msg.channel.send(
-                        error_message,
-                        delete_after=7,
+                    await std_embed.send_error(
+                        msg.channel,
+                        title=fmt.format_maxlen("Error finding {}", cmd_name.upper()),
+                        description=fmt.format_maxlen(
+                            "Could not find command `{}`", cmd_name
+                        ),
+                        author=msg.author,
                     )
         # assigning roles
         # only if message is in designated role channel
