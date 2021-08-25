@@ -175,12 +175,32 @@ class Mute_Command(Bot_Command):
 
     #gets the mute role for this server
     async def get_role(self, guild: discord.Guild):
+        #disables chat permissions
+        text_perms = discord.PermissionOverwrite(
+            send_messages=False,
+            send_tts_messages=False,
+            add_reactions=False,
+        )
+        #disable voice permissions
+        voice_perms = discord.PermissionOverwrite(
+            connect=False,
+            speak=False,
+            stream=False
+        )
         #creates 'mute' role if it doesn't already exist in this server
         if discord.utils.get(guild.roles, name="mute") is None:
-            #disables messaging, reaction and voice channel permissions
-            perms = discord.Permissions(send_messages=False, connect=False, speak=False, add_reactions=False)
-            await guild.create_role(name="mute", hoist=True, permissions=perms, color=discord.Color.dark_theme())
+            await guild.create_role(
+                name="mute",
+                hoist=True,
+                permissions=discord.Permissions.none(),
+                color=discord.Color.dark_theme()
+            )
         self.role = discord.utils.get(guild.roles, name="mute")
+        #add voice and text channel overwrites for this role
+        for text_channel in guild.text_channels:
+            await text_channel.set_permissions(self.role, overwrite=text_perms)
+        for voice_channel in guild.voice_channels:
+            await voice_channel.set_permissions(self.role, overwrite=voice_perms)
 
 
 

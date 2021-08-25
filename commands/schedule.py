@@ -172,13 +172,6 @@ class Schedule_Command(Bot_Command):
             }
             await self.schedule_event(msg.author, channel, event)
             
-        #TODO allows admins to schedule announcements, requires setting an announcement channel
-        elif args.casefold().startswith("announcement"):
-            if msg.author.guild_permissions.administrator:
-                pass
-                #await channel.send("@everyone", embed=)
-            pass
-
         #edits a specified event
         elif args.casefold().startswith("edit"):
             embed = discord.Embed(color=discord.Color.red())
