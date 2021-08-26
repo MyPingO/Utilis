@@ -443,6 +443,7 @@ class Bot_Commands:
             if e.log:
                 self.log_error(command, e)
             await self.send_error_message(msg.channel, command, str(e), msg.author)
+            raise e
         except Exception as e:
             self.log_error(command, e)
             await self.send_error_message(
@@ -453,6 +454,7 @@ class Bot_Commands:
                 ),
                 msg.author,
             )
+            raise e
 
     def log_error(self, command: Bot_Command, e: Exception) -> None:
         """Logs an error raised while executing a command."""
