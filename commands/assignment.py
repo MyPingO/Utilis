@@ -2,7 +2,7 @@ import discord
 import shutil
 import json
 from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
-from main import bot_prefix
+from bot_config import bot_config
 from commands.help import help_cmd
 from random import choice
 from pathlib import Path
@@ -10,7 +10,7 @@ from random import choice
 from utils import fmt, get
 from utils.file import delete_empty_directories
 from utils.parse import split_args as split_args_helper
-from typing import Optional
+from typing import Optional, Union
 
 
 async def link_check(link, msg):
@@ -65,19 +65,19 @@ class Assignment_Command(Bot_Command):
     # TODO Fix help message [class_number]
     short_help = "Shows a detailed explanation of the specified assignment including relevant links, hints and solutions for {class_number}."
 
-    long_help = """Specify the assignment you want help with: ${class_number} [assignment_number] Example: **$211 1** or **$212 3**
+    long_help = """Specify the assignment you want help with: {bot_prefix}{class_number} [assignment_number] Example: **{bot_prefix}211 1** or **{bot_prefix}212 3**
 
     **Sub-commands:**
-        ${class_number} assignments
-        ${class_number} add
-        ${class_number} delete
-        ${class_number} solution [assignment_number(s)]
-        ${class_number} syllabus
+        {bot_prefix}{class_number} assignments
+        {bot_prefix}{class_number} add
+        {bot_prefix}{class_number} delete
+        {bot_prefix}{class_number} solution [assignment_number(s)]
+        {bot_prefix}{class_number} syllabus
     """
 
     admin_long_help = """**ADMINS ONLY:**
-    ${class_number} edit
-    ${class_number} pending [assignment_number(s)] """
+    {bot_prefix}{class_number} edit
+    {bot_prefix}{class_number} pending [assignment_number(s)] """
 
     category = Bot_Command_Category.CLASS_INFO
 
@@ -91,12 +91,23 @@ class Assignment_Command(Bot_Command):
         self.guild_id = guild_id  # the guild_id of the specific discord server
         # print(self.class_info) <---- example of class_info
 
-    def get_help(self, member: Optional[discord.Member], args: Optional[str]):
-        if member is None or not member.guild_permissions.administrator:
-            return fmt.format_maxlen(self.long_help, class_number=self.name)
+    def get_help(
+        self, user: Optional[Union[discord.User, discord.Member]], args: Optional[str]
+    ):
+        if isinstance(user, discord.Member):
+            prefix = bot_config.prefix.get(user.guild)
+        else:
+            prefix = bot_config.prefix.bot.get()
+
+        if user is None or not user.guild_permissions.administrator:
+            return fmt.format_maxlen(
+                self.long_help, class_number=self.name, bot_prefix=prefix
+            )
         else:
             return fmt.format_maxlen(
-                self.long_help + "\n" + self.admin_long_help, class_number=self.name
+                self.long_help + "\n" + self.admin_long_help,
+                class_number=self.name,
+                bot_prefix=prefix,
             )
 
     def get_description(self) -> str:
@@ -747,6 +758,7 @@ class Assignment_Command(Bot_Command):
                 syllabus_path = self.syllabus_path / self.guild_id / self.name
                 # check if the directory already exists i.e syllabus already added to that class
                 if syllabus_path.exists():
+                    bot_prefix = bot_config.prefix.get(msg.guild)
                     await msg.channel.send(
                         f"The syllabus to the {self.name} class has already been added. To view it type **{bot_prefix}{self.name} syllabus**. To delete it type **{bot_prefix}{self.name} syllabus delete**"
                     )
@@ -1792,11 +1804,13 @@ class Assignment_Command(Bot_Command):
             # since this is the wrong syntax because assignment number isn't specified with adding or deleting a solution
             # send a message to let them know the format is wrong
             if "add" in solution_choice_list:
+                bot_prefix = bot_config.prefix.get(msg.guild)
                 await msg.channel.send(
                     f"Error: To add a solution to an assignment in the **{self.name}** class. Type **{bot_prefix}{self.name} add**"
                 )
                 return
             if "delete" in solution_choice_list:
+                bot_prefix = bot_config.prefix.get(msg.guild)
                 await msg.channel.send(
                     f"Error: To delete a solution to an assignment in the **{self.name}** class. Type **{bot_prefix}{self.name} delete**"
                 )
@@ -2009,8 +2023,10 @@ class addClass(Bot_Command):
                         guild_id,
                     )
 
-    def get_help(self, member: Optional[discord.Member], args: Optional[str]):
-        if member is None or not member.guild_permissions.administrator:
+    def get_help(
+        self, user: Optional[Union[discord.User, discord.Member]], args: Optional[str]
+    ):
+        if user is None or not user.guild_permissions.administrator:
             return self.long_help
         else:
             return self.long_help + "\n" + self.admin_long_help

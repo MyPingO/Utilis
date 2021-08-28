@@ -1,8 +1,8 @@
 from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from pathlib import Path
-from utils import find
+from utils import find, fmt
 from commands.unmute import unmute
-from main import bot_prefix
+from bot_config import bot_config
 from typing import Optional, Union
 
 import datetime
@@ -20,7 +20,7 @@ class Mute_Command(Bot_Command):
 
     short_help = "Mutes user for specified time"
 
-    long_help = f"""Mutes the specified user for specified duration. Default duration is {default_time}.
+    long_help = """Mutes the specified user for specified duration. Default duration is {default_time}.
     Arguments:
     `User`
     `Duration: [XXwXXdXXhXXm] (optional)`
@@ -51,8 +51,17 @@ class Mute_Command(Bot_Command):
         return member is not None and member.guild_permissions.administrator
 
 
+    def get_help(self, user, args):
+        if isinstance(user, discord.Member):
+            prefix = bot_config.prefix.get(user.guild)
+        else:
+            prefix = bot_config.prefix.bot.get()
 
-
+        return fmt.format_maxlen(
+            self.long_help,
+            default_time=self.default_time,
+            bot_prefix=prefix,
+        )
 
     async def run(self, msg: discord.Message, args: str):
         #gets current channel

@@ -10,11 +10,10 @@ import asyncio
 import logging
 from pathlib import Path
 
+from bot_config import bot_config
 from core import client
 from bot_cmd import bot_commands
 from utils import fmt, std_embed
-
-bot_prefix = "!"
 
 log = logging.getLogger("main")
 
@@ -28,7 +27,7 @@ def starts_with_mention(content: str) -> bool:
     )
 
 
-def remove_prefix(content: str) -> str:
+def remove_prefix(content: str, bot_prefix: str) -> str:
     """Removes the bot prefix or bot's mention string from the start of a
     string.
     """
@@ -116,10 +115,11 @@ async def on_ready():
 async def on_message(msg: discord.Message):
     # Check to see if the message is not from a bot
     if not msg.author.bot and msg.author != client.user:
+        bot_prefix = bot_config.prefix.get(msg.guild)
         # Check to see if the message is trying to run a command
         if msg.content.startswith(bot_prefix) or starts_with_mention(msg.content):
             # Get the command the member is trying to run
-            clean_content = remove_prefix(msg.content)
+            clean_content = remove_prefix(msg.content, bot_prefix)
             cmd_name = get_command_name(clean_content)
 
             if not cmd_name:
