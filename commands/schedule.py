@@ -3,10 +3,8 @@ from utils import find, get
 from utils.paged_message import Paged_Message
 from utils import parse, std_embed
 from typing import Optional, Union
-from core import client
 from db import db
 
-import mysql.connector
 import datetime
 import discord
 import asyncio
@@ -189,6 +187,7 @@ class Schedule_Command(Bot_Command):
                 await channel.send(embed=embed)
                 return
             event = self.get_event(title, guild.id)
+            print(event)
 
             if event:
                 print(f"Editing {event[1]}")
@@ -217,7 +216,9 @@ class Schedule_Command(Bot_Command):
 
     #returns the dictionary of the event details if it exists
     def get_event(self, name: str, guild_id):
-        self.cursor.execute(f"SELECT * FROM schedule WHERE Title LIKE '{name}' AND Server = {guild_id};")
+        operation = "SELECT * FROM schedule WHERE Title LIKE %s AND Server = %s;"
+        params = (name, guild_id)
+        self.cursor.execute(operation, params)
         item = self.cursor.fetchall()
         if len(item) == 0:
             return None
@@ -354,17 +355,9 @@ class Schedule_Command(Bot_Command):
         year = int(dt.strftime('%Y'))
         month = int(dt.strftime('%m'))
         #add the event to the database table
-        self.cursor.execute(f"""INSERT INTO schedule VALUES (
-                {guild.id},
-                '{event[0]}',
-                '{str(dt)}',
-                {year},
-                {month},
-                {message.id},
-                {role.id},
-                {member.id}
-            );"""
-        )
+        operation = "INSERT INTO schedule VALUES (%s, %s, %s, %s, %s, %s, %s, %s);"
+        params = (guild.id, event[0], dt, year, month, message.id, role.id, member.id)
+        self.cursor.execute(operation, params)
         db.commit()
         #sleep until 5 minutes before the event to notify participants ahead of time
         await discord.utils.sleep_until(dt.astimezone(tz=self.tz) - datetime.timedelta(minutes=5))
@@ -448,7 +441,9 @@ class Schedule_Command(Bot_Command):
         #admins can clear the schedule
         if remove_all and msg.author.guild_permissions.administrator:
             #get a list of tuples representing all the scheduled events in this server
-            self.cursor.execute(f"SELECT * FROM schedule WHERE Server = {guild_id};")
+            operation = "SELECT * FROM schedule WHERE Server = %s;"
+            params = (guild_id,)
+            self.cursor.execute(operation, params)
             events = self.cursor.fetchall()
             for event in events:
                 #delete the role assigned to this event
@@ -456,7 +451,9 @@ class Schedule_Command(Bot_Command):
                 if role is not None:
                     await role.delete()
                 #delete the event from the database
-                self.cursor.execute(f"DELETE FROM schedule WHERE Server = {guild_id} AND Title = '{event[1]}';")
+                operation = "DELETE FROM schedule WHERE Server = %s AND Title = %s;"
+                params = (guild_id, event[1])
+                self.cursor.execute(operation, params)
                 db.commit()
                 #try to delete the message asking for reactions to join this event
                 try:
@@ -468,7 +465,9 @@ class Schedule_Command(Bot_Command):
         #removes the specified events from the schedule
         elif event is not None:
             #delete the event from the database
-            self.cursor.execute(f"DELETE FROM schedule WHERE Server = {guild_id} AND Title = '{event[1]}';")
+            operation = "DELETE FROM schedule WHERE Server = %s AND Title = %s;"
+            params = (guild_id, event[1])
+            self.cursor.execute(operation, params)
             db.commit()
             #delete the role assigned to this event
             role = msg.guild.get_role(event[6])
@@ -657,7 +656,9 @@ class Schedule_Command(Bot_Command):
             edit_desc += f"\n{fields['time_emoji']} `Time`: <t:{int(old_dt.timestamp())}:t> -> <t:{int(dt.timestamp())}:t>"
 
         #delete the old event
-        self.cursor.execute(f"DELETE FROM schedule WHERE Server = {guild_id} AND Title = '{event[1]}';")
+        operation = "DELETE FROM schedule WHERE Server = %s AND Title = %s;"
+        params = (guild_id, event[1])
+        self.cursor.execute(operation, params)
         db.commit()
         #update the role for this event
         role = channel.guild.get_role(event[6])
@@ -718,7 +719,9 @@ class Schedule_Command(Bot_Command):
         user can turn the pages of the schedule if there are multiple pages.
         """
         #check if this guild has a schedule
-        self.cursor.execute(f"SELECT * FROM schedule WHERE Server = {guild.id};")
+        operation = "SELECT * FROM schedule WHERE Server = %s;"
+        params = (guild.id,)
+        self.cursor.execute(operation, params)
         #if there are no events scheduled in this server
         async def no_events():
             embed = discord.Embed(
@@ -734,21 +737,27 @@ class Schedule_Command(Bot_Command):
 
         #if a year is specified check if it has events scheduled, otherwise get a tuple of all years with events scheduled
         if year is not None:
-            self.cursor.execute(f"SELECT Year FROM schedule WHERE Server = {guild.id} AND Year = {year};")
+            operation = "SELECT Year FROM schedule WHERE Server = %s AND Year = %s;"
+            params = (guild.id, year)
+            self.cursor.execute(operation, params)
             years = self.cursor.fetchall()
             if not years:
-                print(years)
                 await no_events()
                 return
+            years = years[0]
         else:
-            self.cursor.execute(f"SELECT DISTINCT Year FROM schedule WHERE Server = {guild.id};")
+            operation = "SELECT DISTINCT Year FROM schedule WHERE Server = %s;"
+            params = (guild.id,)
+            self.cursor.execute(operation, params)
             years = [item[0] for item in self.cursor.fetchall()]
 
 
         embeds = []
         def field_generator(item):
             #get a list of tuples representing events in this month, ordered by datetime
-            self.cursor.execute(f"SELECT * FROM schedule WHERE Server = {guild.id} AND Year = {year} AND Month = {item} ORDER BY Datetime;")
+            operation = "SELECT * FROM schedule WHERE Server = %s AND Year = %s AND Month = %s ORDER BY Datetime;"
+            params = (guild.id, year, item)
+            self.cursor.execute(operation, params)
             l = self.cursor.fetchall()
             name = datetime.datetime.strptime(str(item), '%m').strftime('%B')
             value = "\n".join(f"[<t:{int(datetime.datetime.fromisoformat(event[2]).timestamp())}> - {event[1]}]"
@@ -759,7 +768,9 @@ class Schedule_Command(Bot_Command):
         #create a list of embeds per year
         for year in years:
             #get a unique list of months with events in ascending order
-            self.cursor.execute(f"SELECT DISTINCT Month FROM schedule WHERE Server = {guild.id} AND Year = {year} ORDER BY Month ASC;")
+            operation = "SELECT DISTINCT Month FROM schedule WHERE Server = %s AND Year = %s ORDER BY Month ASC;"
+            params = (guild.id, year)
+            self.cursor.execute(operation, params)
             months = [item[0] for item in self.cursor.fetchall()]
             embeds += (Paged_Message.embed_list_from_items(
                     months,
