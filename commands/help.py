@@ -2,6 +2,7 @@ import discord
 from typing import Union, Optional
 
 from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
+from bot_config import bot_config
 from utils import fmt, std_embed
 from utils.errors import ReportableError
 from utils.paged_message import get_paged_footer, Paged_Message
@@ -13,12 +14,22 @@ class Help_Command(Bot_Command):
     short_help = "Gives information about the bot's commands. Specifying what command you need help with by doing `help <command>` will show you more details about that command"
 
     long_help = """Gives information about the bot's commands.
-    Arguments:
-    `command`
-    `None`
+    Usage:
+    `{prefix}help` - Get a list of all available commands.
+    `{prefix}help [command]` - Get detailed info for a specific command.
     """
 
     category = Bot_Command_Category.TOOLS
+
+    def get_help(
+        self, user: Optional[Union[discord.User, discord.Member]], args: Optional[str]
+    ) -> Union[str, discord.Embed]:
+        if isinstance(user, discord.Member):
+            prefix = bot_config.prefix.get(user.guild)
+        else:
+            prefix = bot_config.prefix.bot.get()
+
+        return fmt.format_maxlen(self.long_help, prefix=prefix)
 
     async def run(self, msg: discord.Message, args: str):
         if args:
@@ -83,9 +94,11 @@ class Help_Command(Bot_Command):
 
         ret = []
         sample_footer_len = len(get_paged_footer(999, 999, user) or "")
-        description = (
-            "Run `help <command>` to get detailed information about a specific command."
-        )
+        if isinstance(user, discord.Member):
+            bot_prefix = bot_config.prefix.get(user.guild)
+        else:
+            bot_prefix = bot_config.prefix.bot.get()
+        description = f"Run `{bot_prefix}help [command]` to get detailed information about a specific command."
 
         for category, commands in command_categories.items():
             # Create one or more embeds for all of the commands in each
