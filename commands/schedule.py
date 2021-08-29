@@ -4,7 +4,7 @@ from utils.paged_message import Paged_Message
 from utils import parse, std_embed
 from typing import Optional, Union
 from core import client
-from db import mydb
+from db import db
 
 import mysql.connector
 import datetime
@@ -35,7 +35,7 @@ class Schedule_Command(Bot_Command):
 
     #create a table in the database to store events if it doesn't exist
     def __init__(self):
-        self.cursor = mydb.cursor()
+        self.cursor = db.cursor()
         self.cursor.execute("""CREATE TABLE IF NOT EXISTS schedule (
                 Server bigint,
                 Title varchar(100),
@@ -48,7 +48,7 @@ class Schedule_Command(Bot_Command):
                 PRIMARY KEY (Server, Title)
             );"""
         )
-        mydb.commit()
+        db.commit()
 
     async def run(self, msg: discord.Message, args: str):
         #gets current server
@@ -173,7 +173,7 @@ class Schedule_Command(Bot_Command):
                 msg.author.id,
             )
             await self.schedule_event(msg.author, channel, event)
-            
+
         #edits a specified event
         elif args.casefold().startswith("edit"):
             embed = discord.Embed(color=discord.Color.red())
@@ -355,17 +355,17 @@ class Schedule_Command(Bot_Command):
         month = int(dt.strftime('%m'))
         #add the event to the database table
         self.cursor.execute(f"""INSERT INTO schedule VALUES (
-                {guild.id}, 
-                '{event[0]}', 
-                '{str(dt)}', 
-                {year}, 
-                {month}, 
-                {message.id}, 
-                {role.id}, 
+                {guild.id},
+                '{event[0]}',
+                '{str(dt)}',
+                {year},
+                {month},
+                {message.id},
+                {role.id},
                 {member.id}
             );"""
         )
-        mydb.commit()
+        db.commit()
         #sleep until 5 minutes before the event to notify participants ahead of time
         await discord.utils.sleep_until(dt.astimezone(tz=self.tz) - datetime.timedelta(minutes=5))
 
@@ -426,7 +426,7 @@ class Schedule_Command(Bot_Command):
         event: Optional[tuple] = None,
         remove_all: bool = False
     ):
-        """Deletes the passed event from the database table as 
+        """Deletes the passed event from the database table as
         well as its associated role and reaction message.
 
         Parameters
@@ -457,7 +457,7 @@ class Schedule_Command(Bot_Command):
                     await role.delete()
                 #delete the event from the database
                 self.cursor.execute(f"DELETE FROM schedule WHERE Server = {guild_id} AND Title = '{event[1]}';")
-                mydb.commit()
+                db.commit()
                 #try to delete the message asking for reactions to join this event
                 try:
                     m = await channel.fetch_message(event[5])
@@ -469,7 +469,7 @@ class Schedule_Command(Bot_Command):
         elif event is not None:
             #delete the event from the database
             self.cursor.execute(f"DELETE FROM schedule WHERE Server = {guild_id} AND Title = '{event[1]}';")
-            mydb.commit()
+            db.commit()
             #delete the role assigned to this event
             role = msg.guild.get_role(event[6])
             if role is not None:
@@ -658,7 +658,7 @@ class Schedule_Command(Bot_Command):
 
         #delete the old event
         self.cursor.execute(f"DELETE FROM schedule WHERE Server = {guild_id} AND Title = '{event[1]}';")
-        mydb.commit()
+        db.commit()
         #update the role for this event
         role = channel.guild.get_role(event[6])
         if role is None:
@@ -714,7 +714,7 @@ class Schedule_Command(Bot_Command):
         A specific year that a schedule is being requested for.
 
         m: Optional[Union[disord.User, discord.Member]]
-        The member or user requesting the schedule. If provided, only this 
+        The member or user requesting the schedule. If provided, only this
         user can turn the pages of the schedule if there are multiple pages.
         """
         #check if this guild has a schedule
