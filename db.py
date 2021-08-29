@@ -30,11 +30,11 @@ def _get_login_info() -> dict:
             raise ValueError(missing_login_info_message)
 
 
-mydb = mysql.connector.connect(**_get_login_info())
+db = mysql.connector.connect(**_get_login_info())
 
 # If no database was provided in the login info file, default to utilis
-if mydb.database is None:
-    with mydb.cursor() as c:
+if db.database is None:
+    with db.cursor() as c:
         c.execute("CREATE DATABASE IF NOT EXISTS utilis;")
         c.execute("USE utilis;")
-        mydb.commit()
+        db.commit()

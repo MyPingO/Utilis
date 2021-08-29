@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 
 from core import client
-from db import mydb
+from db import db
 from bot_cmd import bot_commands
 from utils import fmt, std_embed
 
@@ -227,4 +227,4 @@ def start_bot() -> None:
 if "__main__" == __name__:
     start_bot()
     print("------------\nDisconnected\n------------")
-    mydb.close()
+    db.close()
