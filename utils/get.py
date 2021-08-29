@@ -4,7 +4,7 @@ from typing import Callable, Generic, Iterator, Optional, Sequence, TypeVar, Uni
 
 from core import client
 from .paged_message import Paged_Message
-from .std_embed import Colors
+from . import std_embed
 
 
 _T = TypeVar("_T")
@@ -100,6 +100,85 @@ async def reply(
         return None
 
 
+async def confirmation(
+    member: discord.Member,
+    channel: discord.TextChannel,
+    msg: Optional[discord.Message] = None,
+    title: Optional[str] = "Confirm or Deny",
+    description: Optional[str] = None,
+    timeout: Optional[float] = 60,
+    delete_after: bool = False,
+    error_message: Optional[str] = "Error: You took too long to respond"
+) -> bool:
+    """Sends an embed to the passed channel, requesting a reaction confirmation.
+
+    Parameters
+    ----------
+    member: discord.Member
+    The member to request verification from.
+
+    channel: discord.TextChannel
+    The channel where the embed will be sent to request verification from the member.
+
+    msg: Optional[discord.Message]
+    A discord message to prompt for confirmation. If None, a message will be created
+    using 'title'
+
+    title: Optional[str]
+    The title of the embed.
+
+    description: Optional[str]
+    A descriptive message explaining what the member is being asked to
+    confirm or deny.
+
+    timeout: Optional[float]
+    How long in seconds the function should wait for a reaction
+    from `member` before timing out and returning `None`.
+
+    delete_after: bool
+    Determines whether or not to delete the message requesting confirmation.
+
+    error_message: Optional[str]
+    The message sent to `channel` if the function times out waiting for a user event.
+
+    """
+
+    confirm_emoji = "✅"
+    deny_emoji = "❌"
+    if msg is None:
+        #send the embed requesting confirmation and add the appropriate reactions
+        msg = await std_embed.send_input(
+            channel,
+            title=title,
+            description=description,
+            author=member
+        )
+    await msg.add_reaction(confirm_emoji)
+    await msg.add_reaction(deny_emoji)
+
+    #wait for the user's reaction response
+    try:
+        reaction, user = await client.wait_for(
+            "reaction_add",
+            check=lambda r, u: r.message == msg
+            and r.emoji in (confirm_emoji, deny_emoji)
+            and u == member,
+            timeout=timeout
+        )
+
+        if delete_after:
+            await msg.delete()
+        if reaction.emoji == confirm_emoji:
+            return True
+        return False
+    except asyncio.TimeoutError:
+        if error_message is not None:
+            await std_embed.send_error(channel, description=error_message, author=member)
+        if delete_after:
+            await msg.delete()
+        return False
+
+
 class User_Selection_Message(Paged_Message, Generic[_T]):
     """Represents an message that can be used to prompt a user `responder` to
     select options from a list.
@@ -124,7 +203,7 @@ class User_Selection_Message(Paged_Message, Generic[_T]):
         description: Optional[str] = None,
         get_multiple_selections: bool = False,
         auto_delete_msg: bool = True,
-        color: Optional[Union[discord.Color, int]] = Colors.INPUT,
+        color: Optional[Union[discord.Color, int]] = std_embed.Colors.INPUT,
     ):
         """Parameters
         -----------
