@@ -1,6 +1,16 @@
 import discord
 import asyncio
-from typing import Callable, Generic, Iterator, Optional, Sequence, TypeVar, Union
+from typing import (
+    Callable,
+    Generic,
+    Iterable,
+    Iterator,
+    Mapping,
+    Optional,
+    Sequence,
+    TypeVar,
+    Union,
+)
 
 from core import client
 from .paged_message import Paged_Message
@@ -108,7 +118,7 @@ async def confirmation(
     description: Optional[str] = None,
     timeout: Optional[float] = 60,
     delete_after: bool = False,
-    error_message: Optional[str] = "Error: You took too long to respond"
+    error_message: Optional[str] = "Error: You took too long to respond",
 ) -> bool:
     """Sends an embed to the passed channel, requesting a reaction confirmation.
 
@@ -146,24 +156,21 @@ async def confirmation(
     confirm_emoji = "✅"
     deny_emoji = "❌"
     if msg is None:
-        #send the embed requesting confirmation and add the appropriate reactions
+        # send the embed requesting confirmation and add the appropriate reactions
         msg = await std_embed.send_input(
-            channel,
-            title=title,
-            description=description,
-            author=member
+            channel, title=title, description=description, author=member
         )
     await msg.add_reaction(confirm_emoji)
     await msg.add_reaction(deny_emoji)
 
-    #wait for the user's reaction response
+    # wait for the user's reaction response
     try:
         reaction, user = await client.wait_for(
             "reaction_add",
             check=lambda r, u: r.message == msg
             and r.emoji in (confirm_emoji, deny_emoji)
             and u == member,
-            timeout=timeout
+            timeout=timeout,
         )
 
         if delete_after:
@@ -173,7 +180,9 @@ async def confirmation(
         return False
     except asyncio.TimeoutError:
         if error_message is not None:
-            await std_embed.send_error(channel, description=error_message, author=member)
+            await std_embed.send_error(
+                channel, description=error_message, author=member
+            )
         if delete_after:
             await msg.delete()
         return False
@@ -184,19 +193,19 @@ class User_Selection_Message(Paged_Message, Generic[_T]):
     select options from a list.
     """
 
-    selection_reactions = ("1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯", "🇰", "🇱", "🇲", "🇳", "🇴", "🇵", "🇶", "🇷", "🇸", "🇹", "🇺", "🇻", "🇼", "🇽", "🇾", "🇿")  # fmt: skip
+    default_selection_reactions: tuple[str, ...] = ("1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯", "🇰", "🇱", "🇲", "🇳", "🇴", "🇵", "🇶", "🇷", "🇸", "🇹", "🇺", "🇻", "🇼", "🇽", "🇾", "🇿")  # fmt: skip
 
     auto_delete_msg: bool
     get_multiple_selections: bool
 
-    _reaction_mapping: dict[str, _T]
+    _reaction_mapping: Mapping[str, _T]
     _selections: Optional[list[_T]] = None
 
     _check = "✅"
 
     def __init__(
         self,
-        options: Sequence[_T],
+        options: Union[Mapping[str, _T], Sequence[_T]],
         option_text_generator: Callable[[_T], str],
         responder: Optional[Union[discord.User, discord.Member]],
         title: Optional[str] = None,
@@ -207,8 +216,11 @@ class User_Selection_Message(Paged_Message, Generic[_T]):
     ):
         """Parameters
         -----------
-        options: Sequence[_T]
-        The options that will be chosen from.
+        options: [Mapping[str, _T], Sequence[_T]],
+        The options that will be chosen from. Can either be a mapping of
+        emojis to items, or a list of items. If a list of items is passed,
+        reaction emojis will be automatically assigned from
+        `default_selection_reactions`.
 
         option_text_generator: Callable[[_T], str]
         A function to convert an option from `options` to a string
@@ -240,11 +252,14 @@ class User_Selection_Message(Paged_Message, Generic[_T]):
         """
         # Make sure options list is valid.
         if not options:
-            raise ValueError(f"options list can not be empty.")
-        if len(options) > len(self.selection_reactions):
-            raise ValueError(
-                f"options list may have a maximum of {len(self.selection_reactions)} elements."
-            )
+            raise ValueError(f"options can not be empty.")
+        if isinstance(options, Sequence):
+            if len(options) > len(self.default_selection_reactions):
+                raise ValueError(
+                    "options list may have a maximum of "
+                    f"{len(self.default_selection_reactions)}"
+                    " elements."
+                )
 
         # If no description provided, use a default description.
         if description is None:
@@ -255,15 +270,30 @@ class User_Selection_Message(Paged_Message, Generic[_T]):
         elif not description:
             description = None
 
-        # Use a generator to create option embeds.
-        def field_generator() -> Iterator[tuple[str, str, bool]]:
-            for option, emoji in zip(options, self.selection_reactions):
-                yield emoji, option_text_generator(option), True
+        options_list: Iterable[_T]
+        if isinstance(options, Sequence):
+            options_list = options
+            # Use a generator to create option embeds.
+            def sequence_field_generator() -> Iterator[tuple[str, str, bool]]:
+                for option, emoji in zip(options, self.default_selection_reactions):
+                    yield emoji, option_text_generator(option), True
 
-        fg = field_generator()
+            fg = sequence_field_generator()
+        elif isinstance(options, Mapping):
+            options_list = options.values()
+            # Use a generator to create option embeds.
+            def mapping_field_generator() -> Iterator[tuple[str, str, bool]]:
+                for emoji, option in options.items():
+                    yield emoji, option_text_generator(option), True
+
+            fg = mapping_field_generator()
+        else:
+            raise ValueError(
+                "options must be a sequence of items or a mapping of emojis to items."
+            )
 
         embeds = self.embed_list_from_items(
-            options,
+            options_list,
             lambda pg: title,
             lambda i: description,
             lambda option: next(fg),
@@ -275,9 +305,13 @@ class User_Selection_Message(Paged_Message, Generic[_T]):
 
         self.auto_delete_msg = auto_delete_msg
         self.get_multiple_selections = get_multiple_selections
-        self._reaction_mapping = {
-            emoji: opt for emoji, opt in zip(self.selection_reactions, options)
-        }
+        if isinstance(options, Mapping):
+            self._reaction_mapping = options
+        else:
+            self._reaction_mapping = {
+                emoji: opt
+                for emoji, opt in zip(self.default_selection_reactions, options)
+            }
 
     async def send(
         self,
@@ -420,7 +454,7 @@ class User_Selection_Message(Paged_Message, Generic[_T]):
 
 async def selections(
     channel: discord.abc.Messageable,
-    options: Sequence[_T],
+    options: Union[Mapping[str, _T], Sequence[_T]],
     option_text_generator: Callable[[_T], str],
     responder: Optional[Union[discord.User, discord.Member]],
     title: Optional[str] = None,
@@ -438,7 +472,7 @@ async def selections(
         option_text_generator,
         responder,
         title=title,
-        description=None,
+        description=description,
         get_multiple_selections=True,
         auto_delete_msg=auto_delete_msg,
     )
@@ -452,7 +486,7 @@ async def selections(
 
 async def selection(
     channel: discord.abc.Messageable,
-    options: Sequence[_T],
+    options: Union[Mapping[str, _T], Sequence[_T]],
     option_text_generator: Callable[[_T], str],
     responder: Optional[Union[discord.User, discord.Member]],
     title: Optional[str] = None,
@@ -470,7 +504,7 @@ async def selection(
         option_text_generator,
         responder,
         title=title,
-        description=None,
+        description=description,
         get_multiple_selections=False,
         auto_delete_msg=auto_delete_msg,
     )
