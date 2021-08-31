@@ -3,11 +3,11 @@ from utils import find, get
 from utils.paged_message import Paged_Message
 from utils import parse, std_embed
 from typing import Optional, Union
-from db import db
 
 import datetime
 import discord
 import asyncio
+import db
 
 class Schedule_Command(Bot_Command):
     name = "schedule"
@@ -15,10 +15,10 @@ class Schedule_Command(Bot_Command):
     short_help = "Posts the server's schedule or schedules an event."
 
     long_help = f"""Schedule an event for the specified date and time.
-    Usage:
+    __Usage:__
     **schedule** [*year*]
     **schedule edit** *title*
-    **schedule event** *date time title*
+    **schedule event** *title*
 
     Format date and time as *`MM/DD/YY HH:MM AM/PM`*
     """
@@ -33,12 +33,11 @@ class Schedule_Command(Bot_Command):
 
     #create a table in the database to store events if it doesn't exist
     def __init__(self):
-        self.cursor = db.cursor()
-        self.cursor.execute("""CREATE TABLE IF NOT EXISTS schedule (
+        db.execute("""CREATE TABLE IF NOT EXISTS schedule (
                 Server bigint,
                 Title varchar(100),
-                Datetime varchar(25),
-                Year int(4),
+                Datetime datetime,
+                Year year,
                 Month int(2),
                 MsgID bigint,
                 RoleID bigint,
@@ -46,7 +45,6 @@ class Schedule_Command(Bot_Command):
                 PRIMARY KEY (Server, Title)
             );"""
         )
-        db.commit()
 
     async def run(self, msg: discord.Message, args: str):
         #gets current server
@@ -85,12 +83,11 @@ class Schedule_Command(Bot_Command):
                         await self.remove(msg, event)
                     #an unauthorized user attempted to delete the event
                     else:
-                        embed = discord.Embed(
-                            title="[ERROR]",
-                            color=discord.Color.red(),
+                        await std_embed.send_error(
+                            channel,
+                            title="ERROR",
                             description="**You do not have permission to remove this event.**"
                         )
-                        await channel.send(embed=embed)
                         return
 
             #post the updated schedule
@@ -98,14 +95,8 @@ class Schedule_Command(Bot_Command):
 
         #scheduling a new event
         elif args.casefold().startswith("event"):
-            error_embed = discord.Embed(color=discord.Color.red())
-            error_embed.set_author(
-                name=f"[NEW EVENT]",
-                icon_url=msg.author.avatar_url_as(format='png')
-            )
-            embed = error_embed.copy()
-            embed.color = discord.Color.gold()
-
+            error_embed = std_embed.get_error(title="NEW EVENT", author=msg.author)
+            embed = std_embed.get_input(title="NEW EVENT", author=msg.author)
             if not args[len("event"):].strip():
                 error_embed.description = "An event title was not provided."
                 await channel.send(embed=error_embed)
@@ -157,15 +148,16 @@ class Schedule_Command(Bot_Command):
             #creates a role to ping participants for this event
             role = await guild.create_role(name=title)
             #send a message asking for members to react to join the event
-            embed.title = role.name
-            embed.color = discord.Color.blue()
-            embed.description = f"React to this message to be pinged for {role.mention} on **<t:{int(dt.timestamp())}:F>**!"
-            message = await channel.send(embed=embed)
+            message = await std_embed.send_info(
+                channel,
+                title=role.name,
+                description=f"React to this message to be pinged for {role.mention} on **<t:{int(dt.timestamp())}:F>**!"
+            )
 
             #create a dictionary of the event details
             event = (
                 title,
-                str(dt),
+                dt,
                 message.id,
                 role.id,
                 msg.author.id,
@@ -174,11 +166,7 @@ class Schedule_Command(Bot_Command):
 
         #edits a specified event
         elif args.casefold().startswith("edit"):
-            embed = discord.Embed(color=discord.Color.red())
-            embed.set_author(
-                name=f"[EDIT EVENT]",
-                icon_url=msg.author.avatar_url_as(format='png')
-            )
+            embed = std_embed.get_error(title=f"EDIT EVENT", author=msg.author)
             #try to find a scheduled event with the specified name
             title = args[len("edit"):].strip()
             if not title:
@@ -186,9 +174,8 @@ class Schedule_Command(Bot_Command):
                 print("No event provided")
                 await channel.send(embed=embed)
                 return
-            event = self.get_event(title, guild.id)
-            print(event)
 
+            event = self.get_event(title, guild.id)
             if event:
                 print(f"Editing {event[1]}")
                 if msg.author.id == event[6] or msg.author.guild_permissions.administrator:
@@ -203,12 +190,11 @@ class Schedule_Command(Bot_Command):
 
         #catch invalid event types or incorrect command usage
         else:
-            embed = discord.Embed(
-                title="[ERROR]",
-                color=discord.Color.red(),
+            await std_embed.send_error(
+                channel,
+                title="ERROR",
                 description="**Please enter a valid event type**"
             )
-            await channel.send(embed=embed)
 
 
 
@@ -218,8 +204,7 @@ class Schedule_Command(Bot_Command):
     def get_event(self, name: str, guild_id):
         operation = "SELECT * FROM schedule WHERE Title LIKE %s AND Server = %s;"
         params = (name, guild_id)
-        self.cursor.execute(operation, params)
-        item = self.cursor.fetchall()
+        item = db.read_execute(operation, params)
         if len(item) == 0:
             return None
         return item[0]
@@ -349,7 +334,7 @@ class Schedule_Command(Bot_Command):
         guild = channel.guild
 
         #unpack the event tuple
-        dt = datetime.datetime.fromisoformat(event[1])
+        dt = event[1]
         message = await channel.fetch_message(event[2])
         role = guild.get_role(event[3])
         year = int(dt.strftime('%Y'))
@@ -357,8 +342,7 @@ class Schedule_Command(Bot_Command):
         #add the event to the database table
         operation = "INSERT INTO schedule VALUES (%s, %s, %s, %s, %s, %s, %s, %s);"
         params = (guild.id, event[0], dt, year, month, message.id, role.id, member.id)
-        self.cursor.execute(operation, params)
-        db.commit()
+        db.execute(operation, params)
         #sleep until 5 minutes before the event to notify participants ahead of time
         await discord.utils.sleep_until(dt.astimezone(tz=self.tz) - datetime.timedelta(minutes=5))
 
@@ -397,9 +381,10 @@ class Schedule_Command(Bot_Command):
         #leave event posted for 5 minutes before deleting it
         await asyncio.sleep(300)
 
+        event = self.get_event(event[0], guild.id)
         try:
             #delete the event from the log file
-            await self.remove(m1, event_dict)
+            await self.remove(m1, event)
             #removes the deleted role mention from the reminder messages
             await m1.edit(content=None)
             await m2.edit(content=None)
@@ -443,8 +428,7 @@ class Schedule_Command(Bot_Command):
             #get a list of tuples representing all the scheduled events in this server
             operation = "SELECT * FROM schedule WHERE Server = %s;"
             params = (guild_id,)
-            self.cursor.execute(operation, params)
-            events = self.cursor.fetchall()
+            events = db.read_execute(operation, params)
             for event in events:
                 #delete the role assigned to this event
                 role = msg.guild.get_role(event[6])
@@ -453,8 +437,7 @@ class Schedule_Command(Bot_Command):
                 #delete the event from the database
                 operation = "DELETE FROM schedule WHERE Server = %s AND Title = %s;"
                 params = (guild_id, event[1])
-                self.cursor.execute(operation, params)
-                db.commit()
+                db.execute(operation, params)
                 #try to delete the message asking for reactions to join this event
                 try:
                     m = await channel.fetch_message(event[5])
@@ -467,8 +450,7 @@ class Schedule_Command(Bot_Command):
             #delete the event from the database
             operation = "DELETE FROM schedule WHERE Server = %s AND Title = %s;"
             params = (guild_id, event[1])
-            self.cursor.execute(operation, params)
-            db.commit()
+            db.execute(operation, params)
             #delete the role assigned to this event
             role = msg.guild.get_role(event[6])
             if role is not None:
@@ -517,7 +499,7 @@ class Schedule_Command(Bot_Command):
         }
 
         title = event[1]
-        dt = datetime.datetime.fromisoformat(event[2])
+        dt = event[2]
         old_dt = dt
         description=f"""
             Editing `{title}`. Which fields would you like to edit?
@@ -658,8 +640,7 @@ class Schedule_Command(Bot_Command):
         #delete the old event
         operation = "DELETE FROM schedule WHERE Server = %s AND Title = %s;"
         params = (guild_id, event[1])
-        self.cursor.execute(operation, params)
-        db.commit()
+        db.execute(operation, params)
         #update the role for this event
         role = channel.guild.get_role(event[6])
         if role is None:
@@ -683,7 +664,7 @@ class Schedule_Command(Bot_Command):
                 description=f"React to this message to be pinged for {role.mention} on **<t:{int(dt.timestamp())}:F>**!"
             )
 
-        new_event = (title, str(dt), message.id, role.id, author.id)
+        new_event = (title, dt, message.id, role.id, author.id)
 
         await std_embed.send_info(channel, title="EDIT EVENT", description=edit_desc)
         #schedule a new event with the edited information
@@ -721,17 +702,14 @@ class Schedule_Command(Bot_Command):
         #check if this guild has a schedule
         operation = "SELECT * FROM schedule WHERE Server = %s;"
         params = (guild.id,)
-        self.cursor.execute(operation, params)
         #if there are no events scheduled in this server
         async def no_events():
-            embed = discord.Embed(
+            await std_embed.send_error(
+                channel,
                 title = f"{guild.name}'s {year+' ' if year else ''}Schedule",
-                color=discord.Color.red(),
                 description=f"**There are no events scheduled{' for '+year if year else ''}**"
             )
-            await channel.send(embed=embed)
-            return
-        if not self.cursor.fetchall():
+        if not db.read_execute(operation, params):
             await no_events()
             return
 
@@ -739,8 +717,7 @@ class Schedule_Command(Bot_Command):
         if year is not None:
             operation = "SELECT Year FROM schedule WHERE Server = %s AND Year = %s;"
             params = (guild.id, year)
-            self.cursor.execute(operation, params)
-            years = self.cursor.fetchall()
+            years = db.read_execute(operation, params)
             if not years:
                 await no_events()
                 return
@@ -748,8 +725,7 @@ class Schedule_Command(Bot_Command):
         else:
             operation = "SELECT DISTINCT Year FROM schedule WHERE Server = %s;"
             params = (guild.id,)
-            self.cursor.execute(operation, params)
-            years = [item[0] for item in self.cursor.fetchall()]
+            years = [item[0] for item in db.read_execute(operation, params)]
 
 
         embeds = []
@@ -757,10 +733,9 @@ class Schedule_Command(Bot_Command):
             #get a list of tuples representing events in this month, ordered by datetime
             operation = "SELECT * FROM schedule WHERE Server = %s AND Year = %s AND Month = %s ORDER BY Datetime;"
             params = (guild.id, year, item)
-            self.cursor.execute(operation, params)
-            l = self.cursor.fetchall()
+            l = db.read_execute(operation, params)
             name = datetime.datetime.strptime(str(item), '%m').strftime('%B')
-            value = "\n".join(f"[<t:{int(datetime.datetime.fromisoformat(event[2]).timestamp())}> - {event[1]}]"
+            value = "\n".join(f"[<t:{int(event[2].timestamp())}> - {event[1]}]"
                 f"({channel.get_partial_message(event[5]).jump_url})"
                 for event in l
             )
@@ -770,8 +745,7 @@ class Schedule_Command(Bot_Command):
             #get a unique list of months with events in ascending order
             operation = "SELECT DISTINCT Month FROM schedule WHERE Server = %s AND Year = %s ORDER BY Month ASC;"
             params = (guild.id, year)
-            self.cursor.execute(operation, params)
-            months = [item[0] for item in self.cursor.fetchall()]
+            months = [item[0] for item in db.read_execute(operation, params)]
             embeds += (Paged_Message.embed_list_from_items(
                     months,
                     lambda t: f"{guild.name}'s {str(year) + ' ' if len(years) > 1 else ''}Schedule",

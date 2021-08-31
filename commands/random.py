@@ -1,4 +1,5 @@
 from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
+from utils import std_embed
 
 import discord
 import random
@@ -13,9 +14,9 @@ class Random_Command(Bot_Command):
     short_help = "Sends a random number in range."
 
     long_help = """Sends a random number in the specified range.
-    Arguments:
-    `Lower bound`
-    `Upper bound`
+    __Usage:__
+    **random** *num1 num2*
+    **rand** *num1 num2*
     """
 
     args_matcher = re.compile(r"^(\d+)\s+(\d+)$")
@@ -26,16 +27,12 @@ class Random_Command(Bot_Command):
             arg1, arg2 = sorted((int(m.group(1)), int(m.group(2))))
             # requires user to enter a valid range
             if arg1 == arg2:
-                print("Please enter two different numbers")
-                await msg.channel.send("Please enter two different numbers")
+                await std_embed.send_error(channel, description="Please enter two different numbers")
                 return
-            num = random.randint(arg1, arg2)
+            await std_embed.send_info(channel, description=random.randint(arg1, arg2))
 
-            print(num)
-            await msg.channel.send(num)
         else:
-            print("Must enter 2 integer values arguments")
-            await msg.channel.send("Must enter 2 integer value arguments")
+            await std_embed.send_error(channel, description="Must enter 2 integer value arguments")
 
 
 bot_commands.add_command(Random_Command())

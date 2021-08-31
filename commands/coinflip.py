@@ -12,8 +12,8 @@ class Coin_Flip_Command(Bot_Command):
     short_help = "Flips a coin"
 
     long_help = """Simulates a coin flip and sends the result
-    Arguments:
-    `None`
+    __Usage:__
+    **coinflip**
     """
 
     async def run(self, msg: discord.Message, args: str):

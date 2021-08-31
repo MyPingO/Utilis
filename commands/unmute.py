@@ -1,24 +1,19 @@
 from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
-from utils import find
-from pathlib import Path
+from utils import find, std_embed
 from typing import Optional, Union
 
 import discord
-import json
 import datetime
+import db
 
 class Unmute_Command(Bot_Command):
     name = "unmute"
 
-    mute_log = Path("data/mute/muted.json")
-
     short_help = "Unmutes user"
 
     long_help = f"""Unmutes the specified user.
-    Arguments:
-    `User`
-
-    Replace `User` with `all` to server unmute.
+    __Usage:__
+    **unmute** *member*|**all**
     """
 
     category = Bot_Command_Category.MODERATION
@@ -33,20 +28,19 @@ class Unmute_Command(Bot_Command):
             #for server unmutes
             if args.lower() == "all":
                 #server unmute
-                await self.unmute(None, msg.channel, msg.author, True)
+                await self.unmute(msg.channel, msg.guild, msg.author)
             else:
                 #try to unmute the member
-                await self.unmute(args, msg.channel, msg.author)
+                await self.unmute(msg.channel, msg.guild, msg.author, args)
 
         #if user didnt enter any arguments
         else:
             print("Please specify a user.")
-            embed = discord.Embed(
-                title="[INPUT ERROR]",
-                color=discord.Color.orange(),
+            await std_embed.send_error(
+                channel,
+                title="ERROR",
                 description="**A user was not specified**"
             )
-            await msg.channel.send(embed=embed)
 
 
 
@@ -55,124 +49,109 @@ class Unmute_Command(Bot_Command):
     #unmutes the passed member and removes them from the log file
     async def unmute(
             self,
-            m: Optional[Union[discord.Member, str]],
             channel: discord.channel.TextChannel,
+            guild: discord.Guild,
             author: discord.Member,
-            server_unmute: bool = False
+            m: Optional[Union[discord.Member, str]] = None,
         ):
         """
         Parameters
         ------------
-
-        m: Optional[Union[discord.Member, str]]
-        The member to be unmuted.
-        Required if server_unmute is `False`, otherwise should be `None`.
-
         channel: discord.channel.TextChannel
         The channel to send the unmute information to.
+
+        guild: discord.Guild
+        The guild where the unmute is occurring.
 
         author: discord.Member
         The moderator responsible for the unmute.
 
-        server_unmute: bool
-        Specifies whether or not to unmute all members in the server.
-        Default value is False
+        m: Optional[Union[discord.Member, str]]
+        The member to be unmuted.
+        Unmutes the server if None.
         """
 
-        #initialize the embed containing the unmute information
-        embed = discord.Embed()
-        #set the footer to the moderator responsible for the unmute
-        embed.set_footer(text=f"By: {author} | {datetime.date.today().strftime('%m/%d/%Y')}")
         #get the mute role from this guild
+        #TODO get role by id from server-attributes table
         mute = discord.utils.get(channel.guild.roles, name="mute")
 
-        with self.mute_log.open("r") as file:
-            log = json.load(file)
-
-        #check if server-wide unmute
-        if server_unmute:
-            #unmute all muted members
-            try:
-                #loop through muted members
-                for mem in mute.members:
-                    #skip any members that have been muted outside of the server mute
-                    if str(mem.id) in log[str(author.guild.id)]:
-                        continue
-                    #remove the mute role
-                    await mem.remove_roles(mute)
-                #remove the server mute from the log file
-                log[str(author.guild.id)].pop('server')
-            except KeyError as ke:
-                print(f"KeyError: {ke}")
-                return
-            except Exception as e:
-                print(f"Error with server unmute\nException: {e}")
-                embed.color = discord.Color.red()
-                embed.set_author(
-                    name="[ERROR] Server Unmute Failed",
-                    icon_url=author.avatar_url_as(format='png')
+        #server unmute
+        if m is None:
+            operation = "SELECT * FROM mute WHERE Server = %s AND Member = %s;"
+            params = (guild.id, guild.id)
+            if not db.read_execute(operation, params):
+                await std_embed.send_info(
+                    channel,
+                    title="SERVER UNMUTE",
+                    description="A server mute is not active."
                 )
-                await channel.send(embed=embed)
                 return
-            with self.mute_log.open("w") as file:
-                json.dump(log, file, indent=4)
+            for mem in mute.members:
+                #skip any members that have been muted outside of the server mute
+                operation = "SELECT * FROM mute WHERE Server = %s AND Member = %s;"
+                params = (guild.id, mem.id)
+                if db.read_execute(operation, params):
+                    continue
+                #remove the mute role
+                await mem.remove_roles(mute)
+            #remove the server mute from the log file
+            operation = "DELETE FROM mute WHERE Server = %s AND Member = %s;"
+            params = (guild.id, guild.id)
+            db.execute(operation, params)
             print(f"Server unmute in [#{channel.guild.id}: {channel.guild.name}]")
-            embed.color = discord.Color.green()
-            embed.description = "**UNMUTED ALL MEMBERS**"
-            embed.set_author(
-                name=f"[SERVER UNMUTE]",
-                icon_url=author.avatar_url_as(format='png')
+            await std_embed.send_success(
+                channel,
+                title="SERVER UNMUTE",
+                author=author
             )
-            await channel.send(embed=embed)
-        #try to unmute the member
+        #member unmute
         else:
             #if m is a string try to get the Member object
             if isinstance(m, str):
-                if await find.member(channel, m, responder=author) is None:
+                member = await find.member(channel, m, responder=author)
+                if member is None:
                     print(f"{m} could not be found")
-                    embed.title = f"[{m}] Not Found"
-                    embed.color = discord.Color.blue()
-                    await channel.send(embed=embed)
+                    await std_embed.send_error(
+                        channel,
+                        title=f"{m} Not Found"
+                    )
                     return
-                else:
-                    m = await find.member(channel, m, responder=author)
+                m = member
 
             #if member isn't muted
             if mute not in m.roles:
                 print(f"User @{m} is not muted")
-                embed.set_author(
-                    name=f"[UNMUTE] {m}",
-                    icon_url=m.avatar_url_as(format='png')
+                await std_embed.send_error(
+                    channel,
+                    title="UNMUTE",
+                    description=f"{m.mention} is not muted",
+                    author=m
                 )
-                embed.description = f"{m.mention}  is not muted"
-                embed.color = discord.Color.blue()
-                await channel.send(embed=embed)
+
             #unmute the member
             else:
-                try:
-                    #remove the member from the log file
-                    log[str(m.guild.id)].pop(str(m.id))
-                    with self.mute_log.open("w") as file:
-                        json.dump(log, file, indent=4)
+                #delete the member from the table
+                operation = "DELETE FROM mute WHERE Server = %s AND Member = %s;"
+                params = (guild.id, m.id)
+                db.execute(operation, params)
+
+                #check if a server-mute is active, then don't remove the role
+                operation = "SELECT * FROM mute WHERE Server = %s AND Member = %s;"
+                params = (guild.id, guild.id)
+                #delete the member from the table but don't remove the role
+                if db.read_execute(operation, params):
+                    await std_embed.send_error(
+                        channel,
+                        title="Active Server-Mute",
+                        author=m
+                    )
+                else:
                     await m.remove_roles(mute)
-                except KeyError as ke:
-                    print(f"KeyError: {ke}")
-                    #if server_mute is active and not muted individually
-                    if log[str(author.guild.id)]['server']:
-                        #error if member is not logged to be muted
-                        embed.color = discord.Color.red()
-                        embed.set_author(
-                            name=f"[ERROR] Active Server-Mute",
-                            icon_url=m.avatar_url_as(format='png')
-                        )
-                        await channel.send(embed=embed)
-                    return
-                embed.set_author(
-                    name=f"[UNMUTE] {m}",
-                    icon_url=m.avatar_url_as(format='png')
-                )
-                embed.color = discord.Color.green()
-                await channel.send(m.mention, embed=embed)
+                    embed = std_embed.get_success(
+                        title=f"UNMUTE {m}",
+                        author=m
+                    )
+                    await channel.send(m.mention, embed=embed)
 
 
 unmute = Unmute_Command()

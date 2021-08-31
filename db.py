@@ -38,3 +38,23 @@ if db.database is None:
         c.execute("CREATE DATABASE IF NOT EXISTS utilis;")
         c.execute("USE utilis;")
         db.commit()
+
+#execute query and commit changes to database
+def execute(query, params: tuple = None, multi: bool = False, connection = db):
+    with connection.cursor() as c:
+        try:
+            c.execute(query, params, multi)
+            connection.commit()
+        except Exception as e:
+            print(f"ERROR executing query: {query}.\n{e}")
+
+#execute query and returns all or a specified amount of rows of the query result
+def read_execute(query, params: tuple = None, multi: bool = False, size: int = 0, connection = db):
+    with connection.cursor() as c:
+        try:
+            c.execute(query, params, multi)
+            if size > 0:
+                return c.fetchmany(size=size)
+            return c.fetchall()
+        except Exception as e:
+            print(f"ERROR executing query: {query}.\n{e}")

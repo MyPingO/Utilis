@@ -11,9 +11,9 @@ class Image_Command(Bot_Command):
     short_help = "Sends a profile picture or custom emoji."
 
     long_help = """Sends the profile picture of a specified user or the image of a custom
-    emoji in this guild. If no user is specified, sends the message author's profile picture.
-    Arguments:
-    `User or Emoji` (optional)
+    emoji in this guild. If nothing is specified, sends the message author's profile picture.
+    __Usage:__
+    **img** [*member|custom emoji*]
     """
 
     category = Bot_Command_Category.TOOLS

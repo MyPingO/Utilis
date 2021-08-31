@@ -12,8 +12,9 @@ class Clear_Command(Bot_Command):
     short_help = "Deletes messages from chat"
 
     long_help = """Clears specified number of messages from the channel
-    Arguments:
-    `Number`
+    __Usage:__
+    **clear** *number*
+    **c** *number*
     """
 
     category = Bot_Command_Category.MODERATION
