@@ -3,7 +3,7 @@ import shutil
 import json
 from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from main import bot_prefix
-from commands.help import help_cmd
+from commands.cmd_help import help_cmd
 from random import choice
 from pathlib import Path
 from random import choice

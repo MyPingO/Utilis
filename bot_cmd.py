@@ -171,10 +171,7 @@ class Bot_Commands:
                     self._load_all_commands(file, indent=(indent + 2))
                 else:
                     if file.suffix == ".py":
-                        try:
-                            self._load_command(file, indent)
-                        except AttributeError as e:
-                            print(f"{' ' * (indent + 2)}Error:", e)
+                        self._load_command(file, indent)
         print("Done.")
 
     def _load_command(self, path: Path, indent=2) -> None:
