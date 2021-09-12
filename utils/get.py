@@ -1,6 +1,7 @@
 import discord
 import asyncio
 from typing import (
+    Any,
     Callable,
     Generic,
     Iterable,
@@ -54,59 +55,45 @@ async def reply(
     The message sent to `channel` if the function times out waiting for a user event.
     """
 
-    tasks = [
-        asyncio.create_task(
-            client.wait_for(
-                "message",
-                check=lambda m: m.author == member and m.channel == channel,
-                timeout=timeout,
-            ),
-            name="response",
-        )
+    events = [
+        {
+            "event": "message",
+            "check": lambda m: m.author == member and m.channel == channel,
+            "timeout": timeout,
+        }
     ]
 
     if message is not None:
         _cancel_emoji = "❌"
         await message.add_reaction(_cancel_emoji)
-        tasks.append(
-            asyncio.create_task(
-                client.wait_for(
-                    "reaction_add",
-                    check=lambda r, u: r.message == message
-                    and r.emoji == _cancel_emoji
-                    and u == member,
-                    timeout=timeout,
-                ),
-                name="reaction",
-            )
+        events.append(
+            {
+                "event": "reaction_add",
+                "check": lambda r, u: r.message == message
+                and r.emoji == _cancel_emoji
+                and u == member,
+                "timeout": timeout,
+            }
         )
 
     try:
-        # wait for the first task to be completed by the user
-        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-        # get the completed task
-        event = list(done)[0]
-        # cancel any other pending tasks
-        for task in pending:
-            try:
-                task.cancel()
-            except asyncio.CancelledError:
-                print(f"Error cancelling {task}")
+        event_type, result = await client_events(events)
         # if member reacted, cancel reply request and return None
-        if event.get_name() == "reaction":
+        if event_type == "reaction_add":
             await message.clear_reactions()
             await channel.send("Request cancelled")
+            # TODO: Replace with raising an exception
             return None
         # if member replied, return response
-        if event.get_name() == "response":
-            response = event.result()
-            return response
-        print(event)
-        return None
+        elif event_type == "message":
+            return result
+        else:
+            raise RuntimeError(f"Unexpected event type {event_type}")
     # if function times out waiting for user
     except asyncio.TimeoutError:
         if error_message is not None:
             await channel.send(error_message)
+        # TODO: Replace with raising an exception
         return None
 
 
@@ -320,7 +307,7 @@ class User_Selection_Message(Paged_Message, Generic[_T]):
         blocking: bool = True,
     ) -> None:
         """Parameters
-        -----------TODO
+        -----------
         channel: discord.abc.Messageable
         The channel where the `options` will be sent to be chosen from.
 
@@ -517,3 +504,28 @@ async def selection(
     if selections is not None:
         return selections[0]
     return selections
+
+
+async def client_events(events: list[dict[str, Any]]) -> tuple[str, Any]:
+    """Takes a list of client events and returns the name and result of the
+    first client event to finish.
+
+    Parameters
+    -----------
+    events: list[dict[str, Any]]
+    A list of arguments to be passed to `client.wait_for`. The keys and values
+    should be parameters and arguments for `client.wait_for`, with `"event"`
+    being a required key/parameter.
+    """
+    tasks = [asyncio.create_task(client.wait_for(**e), name=e["event"]) for e in events]
+    done, pending = await asyncio.wait(
+        tasks,
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+    for task in pending:
+        try:
+            task.cancel()
+        except asyncio.CancelledError as e:
+            print(f"Error cancelling task {task}: {e}")
+    e = done.pop()
+    return e.get_name(), e.result()
