@@ -15,7 +15,7 @@ from typing import (
 
 from core import client
 from .paged_message import Paged_Message
-from . import std_embed
+from . import errors, std_embed
 
 
 _T = TypeVar("_T")
@@ -26,13 +26,13 @@ async def reply(
     channel: discord.TextChannel,
     message: Optional[discord.Message] = None,
     timeout: Optional[float] = 60,
-    error_message: Optional[str] = "Error: You took too long to respond",
-) -> Optional[str]:
+    error_message: Optional[str] = "The command timed out waiting for a response",
+) -> str:
     """Waits for a reply from `member` by getting their next message sent
     in `channel` and returns it. Waiting for a response is cancelled and
-    `None` is returned if `member` reacts to `message` with ❌.
+    raises an error if `member` reacts to `message` with ❌.
     If no response is received in `timeout` seconds, `error_message`
-    is sent to `channel` if it is not `None` and the function returns `None`.
+    is sent to `channel` if it is not `None` and the function raises an error.
 
     Parameters
     ----------
@@ -49,11 +49,12 @@ async def reply(
 
     timeout: Optional[float]
     How long in seconds the function should wait for a message or reaction
-    from `member` before timing out and returning `None`.
+    from `member` before timing out and raising an error.
 
     error_message: Optional[str]
     The message sent to `channel` if the function times out waiting for a user event.
     """
+    _cancel_emoji = "❌"
 
     events = [
         {
@@ -64,7 +65,6 @@ async def reply(
     ]
 
     if message is not None:
-        _cancel_emoji = "❌"
         await message.add_reaction(_cancel_emoji)
         events.append(
             {
@@ -80,21 +80,23 @@ async def reply(
         event_type, result = await client_events(events)
         # if member reacted, cancel reply request and return None
         if event_type == "reaction_add":
-            await message.clear_reactions()
-            await channel.send("Request cancelled")
-            # TODO: Replace with raising an exception
-            return None
+            await message.clear_reaction(_cancel_emoji)  # type: ignore
+            raise errors.UserCancelError()
         # if member replied, return response
         elif event_type == "message":
+            if message is not None:
+                await message.clear_reaction(_cancel_emoji)
             return result
         else:
             raise RuntimeError(f"Unexpected event type {event_type}")
     # if function times out waiting for user
     except asyncio.TimeoutError:
+        if message is not None:
+            await message.clear_reaction(_cancel_emoji)
         if error_message is not None:
-            await channel.send(error_message)
-        # TODO: Replace with raising an exception
-        return None
+            raise errors.UserTimeoutError(error_message)
+        else:
+            raise errors.UserTimeoutError()
 
 
 async def confirmation(
@@ -130,7 +132,7 @@ async def confirmation(
 
     timeout: Optional[float]
     How long in seconds the function should wait for a reaction
-    from `member` before timing out and returning `None`.
+    from `member` before timing out and returning `False`.
 
     delete_after: bool
     Determines whether or not to delete the message requesting confirmation.
@@ -186,7 +188,7 @@ class User_Selection_Message(Paged_Message, Generic[_T]):
     get_multiple_selections: bool
 
     _reaction_mapping: Mapping[str, _T]
-    _selections: Optional[list[_T]] = None
+    _selections: list[_T]
 
     _check = "✅"
 
@@ -237,6 +239,8 @@ class User_Selection_Message(Paged_Message, Generic[_T]):
         Whether or not the message should be removed from `channel` once
         `responder` makes their selection(s).
         """
+        self._selections = []
+
         # Make sure options list is valid.
         if not options:
             raise ValueError(f"options can not be empty.")
@@ -306,14 +310,17 @@ class User_Selection_Message(Paged_Message, Generic[_T]):
         timeout: float = 180,
         blocking: bool = True,
     ) -> None:
-        """Parameters
+        """Sends the message so that the user can make a selection. If no
+        response is made within `timeout` seconds, an error is raised.
+
+        Parameters
         -----------
         channel: discord.abc.Messageable
         The channel where the `options` will be sent to be chosen from.
 
         timeout: float
-        How long the message can go without a valid reaction before the
-        message times out and returns `None`. Measured in seconds.
+        How many seconds the message can go without a valid reaction before
+        the message times out and raises an error.
 
         blocking: bool
         Must remain `True`.
@@ -330,16 +337,13 @@ class User_Selection_Message(Paged_Message, Generic[_T]):
             self._continue = True
             await self._main_loop(timeout)
 
-    def get_selections(self) -> Optional[list[_T]]:
-        """Return a list of the selections made by `responder`, or `None` if
-        the message timed out waiting for a response.
-        """
+    def get_selections(self) -> list[_T]:
+        """Return a list of the selections made by `responder`."""
         return self._selections
 
     async def _find_all_selections(self) -> None:
         if self.msg is None:
             return
-        self._selections = []
 
         async def check_reaction(reaction) -> bool:
             # Adds valid selections to `self._selections` and returns whether
@@ -364,8 +368,6 @@ class User_Selection_Message(Paged_Message, Generic[_T]):
             if reaction.emoji == self._check:
                 return True
             else:
-                if self._selections is None:
-                    self._selections = []
                 self._selections.append(self._reaction_mapping[reaction.emoji])
                 return False
 
@@ -374,13 +376,19 @@ class User_Selection_Message(Paged_Message, Generic[_T]):
         )
         if self.get_multiple_selections:
             # If `responder` made valid selections but timed out without
-            # confirming their choices with a check, set selections to `None`
+            # confirming their choices with a check, raise an error
             if not has_check:
-                self._selections = None
+                await self.delete()
+                raise errors.UserTimeoutError(
+                    "The command timed out waiting for a response"
+                )
         else:
             if not self._selections:
-                # If no selections were made, set `self._selections` to `None`
-                self._selections = None
+                # If no selections were made, raise an error
+                await self.delete()
+                raise errors.UserTimeoutError(
+                    "The command timed out waiting for a response"
+                )
 
     def _reaction_check(
         self,
@@ -437,6 +445,10 @@ class User_Selection_Message(Paged_Message, Generic[_T]):
             await self._find_all_selections()
         if self.auto_delete_msg:
             await self.delete()
+        if not self.get_multiple_selections and not self._selections:
+            raise errors.UserTimeoutError(
+                "The command timed out waiting for a response"
+            )
 
 
 async def selections(
@@ -447,12 +459,12 @@ async def selections(
     title: Optional[str] = None,
     description: Optional[str] = None,
     auto_delete_msg: bool = True,
-    timeout: Optional[float] = 60,
-) -> Optional[list[_T]]:
+    timeout: Optional[float] = None,
+) -> list[_T]:
     """Sends a message to `channel` prompting `responder` to choose multiple
     selections from `options` using reactions. Returns a list of the selected
-    options, or `None` if the function times out waiting for the user to
-    respond. See `User_Selection_Message` for more details on the arguments.
+    options, or raises an error if the function times out waiting for the user
+    to respond. See `User_Selection_Message` for more details on the arguments.
     """
     selection_embed = User_Selection_Message(
         options,
@@ -463,7 +475,7 @@ async def selections(
         get_multiple_selections=True,
         auto_delete_msg=auto_delete_msg,
     )
-    if timeout:
+    if timeout is not None:
         await selection_embed.send(channel, timeout=timeout)
     else:
         await selection_embed.send(channel)
@@ -479,12 +491,12 @@ async def selection(
     title: Optional[str] = None,
     description: Optional[str] = None,
     auto_delete_msg: bool = True,
-    timeout: Optional[float] = 60,
-) -> Optional[_T]:
+    timeout: Optional[float] = None,
+) -> _T:
     """Sends a message to `channel` prompting `responder` to choose a
     selection from `options` using reactions. Returns a the selected option,
-    or `None` if the function times out waiting for the user to respond. See
-    `User_Selection_Message` for more details on the arguments.
+    or raises an error if the function times out waiting for the user to
+    respond. See `User_Selection_Message` for more details on the arguments.
     """
     selection_embed = User_Selection_Message(
         options,
@@ -495,7 +507,7 @@ async def selection(
         get_multiple_selections=False,
         auto_delete_msg=auto_delete_msg,
     )
-    if timeout:
+    if timeout is not None:
         await selection_embed.send(channel, timeout=timeout)
     else:
         await selection_embed.send(channel)

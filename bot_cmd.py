@@ -1,6 +1,6 @@
 from core import client
 from utils import fmt, std_embed
-from utils.errors import ReportableError
+from utils.errors import ReportableError, UserCancelError
 
 import discord
 import logging
@@ -436,6 +436,12 @@ class Bot_Commands:
                 fmt.get_user_log(log_action, msg.author, msg.channel, msg.guild)
             )
             await command.run(msg, args)
+        except UserCancelError as e:
+            if e.log:
+                self.log_error(command, e)
+            await self.send_cancel_message(msg.channel, command, str(e), msg.author)
+            if e.log:
+                raise e
         except ReportableError as e:
             if e.log:
                 self.log_error(command, e)
@@ -476,6 +482,32 @@ class Bot_Commands:
                 return await std_embed.send_error(
                     channel,
                     title=fmt.format_maxlen("Error executing {}", command.name.upper()),
+                    description=description,
+                    author=author,
+                )
+            except Exception as e:
+                print("Error sending error message:", e, sep="\n")
+                raise e
+        else:
+            return None
+
+    async def send_cancel_message(
+        self,
+        channel: discord.abc.Messageable,
+        command: Bot_Command,
+        description: str,
+        author: Optional[Union[discord.User, discord.Member]],
+    ) -> Optional[discord.Message]:
+        """Sends an error message, printing and raising any errors that occur
+        in the process.
+        """
+        if not client.is_closed():
+            try:
+                return await std_embed.send_success(
+                    channel,
+                    title=fmt.format_maxlen(
+                        "Cancelled command {}", command.name.upper()
+                    ),
                     description=description,
                     author=author,
                 )

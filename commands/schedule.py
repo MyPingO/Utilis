@@ -115,8 +115,6 @@ class Schedule_Command(Bot_Command):
             embed.description = f"**Please enter a date for `{title}`**"
             prompt = await channel.send(embed=embed)
             date = await get.reply(msg.author, channel, prompt)
-            if date is None:
-                return
             parsed_args = self.validate(guild.id, date=date.content)
             if parsed_args[1] is None:
                 error_embed.description = parsed_args[3]
@@ -128,8 +126,6 @@ class Schedule_Command(Bot_Command):
             embed.description = f"**Please enter a time for `{title}`**"
             prompt = await channel.send(embed=embed)
             time = await get.reply(msg.author, channel, prompt)
-            if time is None:
-                return
             parsed_args = self.validate(guild.id, time=time.content)
             if parsed_args[2] is None:
                 error_embed.description = parsed_args[3]
@@ -565,8 +561,6 @@ class Schedule_Command(Bot_Command):
 
             #prompt user for a new title
             title = await get.reply(author, channel, msg)
-            if title is None:
-                return
             parsed_args = self.validate(channel.guild.id, title=title.content)
             if parsed_args[0] is None:
                 await std_embed.send_error(
@@ -588,8 +582,6 @@ class Schedule_Command(Bot_Command):
 
             #prompt user for a new date
             date = await get.reply(author, channel, msg)
-            if date is None:
-                return
             parsed_args = self.validate(date=date.content)
             if parsed_args[1] is None:
                 await std_embed.send_error(
@@ -614,8 +606,6 @@ class Schedule_Command(Bot_Command):
 
             #prompt user for a new time
             time = await get.reply(author, channel, msg)
-            if time is None:
-                return
             parsed_args = self.validate(time=time.content)
             if parsed_args[2] is None:
                 await std_embed.send_error(
