@@ -26,6 +26,12 @@ class UserTimeoutError(UserInputError):
     enough.
     """
 
+    def __init__(self, *args, log: bool = False):
+        if args:
+            super().__init__(*args, log=log)
+        else:
+            super().__init__("The command timed out waiting for a response", log=log)
+
 
 class UserCancelError(UserInputError):
     """An error relating to a user cancelling an input prompt."""

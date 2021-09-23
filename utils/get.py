@@ -26,7 +26,7 @@ async def reply(
     channel: discord.TextChannel,
     message: Optional[discord.Message] = None,
     timeout: Optional[float] = 60,
-    error_message: Optional[str] = "The command timed out waiting for a response",
+    error_message: Optional[str] = None,
 ) -> str:
     """Waits for a reply from `member` by getting their next message sent
     in `channel` and returns it. Waiting for a response is cancelled and
@@ -52,7 +52,8 @@ async def reply(
     from `member` before timing out and raising an error.
 
     error_message: Optional[str]
-    The message sent to `channel` if the function times out waiting for a user event.
+    The message sent to `channel` if the function times out waiting for a user
+    event. Uses the default error message if `None`.
     """
     _cancel_emoji = "❌"
 
@@ -379,16 +380,12 @@ class User_Selection_Message(Paged_Message, Generic[_T]):
             # confirming their choices with a check, raise an error
             if not has_check:
                 await self.delete()
-                raise errors.UserTimeoutError(
-                    "The command timed out waiting for a response"
-                )
+                raise errors.UserTimeoutError()
         else:
             if not self._selections:
                 # If no selections were made, raise an error
                 await self.delete()
-                raise errors.UserTimeoutError(
-                    "The command timed out waiting for a response"
-                )
+                raise errors.UserTimeoutError()
 
     def _reaction_check(
         self,
@@ -446,9 +443,7 @@ class User_Selection_Message(Paged_Message, Generic[_T]):
         if self.auto_delete_msg:
             await self.delete()
         if not self.get_multiple_selections and not self._selections:
-            raise errors.UserTimeoutError(
-                "The command timed out waiting for a response"
-            )
+            raise errors.UserTimeoutError()
 
 
 async def selections(
