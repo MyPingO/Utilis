@@ -196,10 +196,17 @@ async def on_message(msg: discord.Message):
 
 
 # allows members to pin messages on their own by reaching a reaction goal
+_pin = "📌"
 @client.event
-async def on_reaction_add(reaction: discord.Reaction, user: discord.Member):
-    if reaction.emoji == "📌" and reaction.count >= 3:
-        await reaction.message.pin()
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
+    if payload.emoji.name == _pin:
+        channel = client.get_channel(payload.channel_id)
+        if channel is not None:
+            message = await channel.fetch_message(payload.message_id)
+            if not message.pinned:
+                pin_reactions = discord.utils.get(message.reactions, emoji=_pin)
+                if pin_reactions is not None and pin_reactions.count >= 3:
+                    await message.pin()
 
 
 def start_bot() -> None:
