@@ -226,3 +226,17 @@ def str_to_date(s: str, require_year: bool = False) -> datetime.date:
                 except Exception:
                     pass
     raise ValueError(f'Could not parse "{s}" as date.')
+
+
+re_duration = re.compile(r"(?:(?P<weeks>\d+)\s*w(?:eeks?)?)?\s*(?:(?P<days>\d+)\s*d(?:ays?)?)?\s*(?:(?P<hours>\d+)\s*h(?:ours?)?)?\s*(?:(?P<minutes>\d+)\s*m(?:inutes?)?)?$", re.IGNORECASE)
+
+
+def str_to_timedelta(s: str) -> datetime.timedelta:
+    m = re_duration.fullmatch(s.strip())
+    if m is None:
+        raise ValueError(f'Could not parse "{s}" as datetime.')
+
+    match = m.groupdict(default=0)
+    for k, v in match.items():
+        match[k] = int(v)
+    return datetime.timedelta(**match)

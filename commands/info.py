@@ -33,7 +33,7 @@ class Info_Command(Bot_Command):
                 channel,
                 title=f"{guild.name}'s Roles",
                 description = "\n".join(
-                    f"{role.name} - {str(len(role.members))+' members' if len(role.members) != 1 else str(len(role.members))+' member'}" 
+                    f"{role.mention} - {str(len(role.members))+' members' if len(role.members) != 1 else str(len(role.members))+' member'}" 
                     for role in guild.roles 
                     if (not role.is_default() and not role.is_bot_managed())
                 )
@@ -61,11 +61,12 @@ class Info_Command(Bot_Command):
                         value += f"{i+1}. {role.members[i].mention}\n"
                 except IndexError:
                     pass
-                embed.add_field(
-                    name=f"Members: {len(role.members)}",
-                    value=value,
-                    inline=False
-                )
+                if len(role.members) > 0:
+                    embed.add_field(
+                        name=f"Members: {len(role.members)}",
+                        value=value,
+                        inline=False
+                    )
                 await channel.send(embed=embed)
 
         #TODO

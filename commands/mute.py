@@ -2,6 +2,7 @@ from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from utils import find, std_embed
 from commands.unmute import unmute
 from typing import Optional, Union
+from utils.parse import re_duration, str_to_timedelta
 
 import datetime
 import discord
@@ -120,18 +121,15 @@ class Mute_Command(Bot_Command):
     #gets the mute information regarding the specified member
     async def get_info(self, channel: discord.TextChannel, guild: discord.Guild, member: Optional[discord.Member] = None):
         if member is None:
-            operation = "SELECT * FROM mute WHERE Server = %s AND Member = %s;"
             params = (guild.id, guild.id)
-            info = db.read_execute(operation, params)
         else:
-            operation = "SELECT * FROM mute WHERE Server = %s AND Member = %s;"
             params = (guild.id, member.id)
-            info = db.read_execute(operation, params)
+        operation = "SELECT * FROM mute WHERE Server = %s AND Member = %s;"
+        info = db.read_execute(operation, params)
 
         #send the mute info to the channel
         if info:
             info = info[0]
-            print(info)
             dt = info[2]
             mod = guild.get_member(info[3])
             await std_embed.send_info(
@@ -144,6 +142,7 @@ class Mute_Command(Bot_Command):
                 author=member if not None else mod
             )
         else:
+            #if member is muted via server-mute and not individually
             if member is not None:
                 operation = "SELECT * FROM mute WHERE Server = %s AND Member = %s;"
                 params = (guild.id, guild.id)
@@ -165,13 +164,10 @@ class Mute_Command(Bot_Command):
     #gets the mute role for this server
     async def get_role(self, guild: discord.Guild):
         #disables chat permissions
-        text_perms = discord.PermissionOverwrite(
+        perms = discord.PermissionOverwrite(
             send_messages=False,
             send_tts_messages=False,
             add_reactions=False,
-        )
-        #disable voice permissions
-        voice_perms = discord.PermissionOverwrite(
             connect=False,
             speak=False,
             stream=False
@@ -186,10 +182,8 @@ class Mute_Command(Bot_Command):
             )
         self.role = discord.utils.get(guild.roles, name="mute")
         #add voice and text channel overwrites for this role
-        for text_channel in guild.text_channels:
-            await text_channel.set_permissions(self.role, overwrite=text_perms)
-        for voice_channel in guild.voice_channels:
-            await voice_channel.set_permissions(self.role, overwrite=voice_perms)
+        for channel in guild.channels:
+            await channel.set_permissions(self.role, overwrite=perms)
 
 
 
@@ -199,23 +193,18 @@ class Mute_Command(Bot_Command):
     def split_args(self, args: str) -> list:
         parsed_args = []
 
-        #get the mute duration from the full string (case insensitive)
-        duration = re.search(r"(?:(?P<weeks>\d+)\s*w(?:eeks?)?)?\s*(?:(?P<days>\d+)\s*d(?:ays?)?)?\s*(?:(?P<hours>\d+)\s*h(?:ours?)?)?\s*(?:(?P<minutes>\d+)\s*m(?:inutes?)?)?$", args, re.I)
+        #try to get the mute duration from the full string (case insensitive)
+        duration = re_duration.search(args)
 
         #append the user being muted to the list
         parsed_args.append(args[:duration.start()].strip())
 
-        #separate the units into a dictionary
-        units_dict = duration.groupdict(default=0)
-        #parse values as int
-        for k, v in units_dict.items():
-            units_dict[k] = int(v)
-
-        #if all time units are zeroed out, time wasn't specified or formatted incorrectly and the default time is used
-        if (0 in set(units_dict.values())) and (len(set(units_dict.values())) == 1):
+        #if there is no match, time wasn't specified or formatted incorrectly and the default time is used
+        if not duration.group(0):
             return self.split_args(f"{parsed_args[0]} {self.default_time}")
+        duration_td = str_to_timedelta(duration.group(0))
 
-        parsed_args.append((datetime.datetime.now() + datetime.timedelta(**units_dict)).replace(microsecond=0))
+        parsed_args.append((datetime.datetime.now() + duration_td).replace(microsecond=0))
         return parsed_args
 
 
