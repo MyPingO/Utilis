@@ -140,7 +140,7 @@ async def on_message(msg: discord.Message):
             else:
                 command = bot_commands.get_command(cmd_name, msg.guild)
                 if command is not None:
-                    if bot_commands.can_run(command, msg.channel, msg.author):
+                    if await bot_commands.can_run(command, msg.channel, msg.author):
                         # If the command exists and the member can run it, run the
                         # command
                         args = get_args(clean_content, cmd_name)

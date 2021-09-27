@@ -92,7 +92,7 @@ class Bot_Command(ABC):
         user: Optional[Union[discord.User, discord.Member]],
     ) -> bool:
         """Returns whether or not `user` has permission to run this command
-        in `location`.
+        in `location`. Can be a co-routine.
 
         Attributes
         ------------
@@ -392,7 +392,7 @@ class Bot_Commands:
                 pass
         return None
 
-    def can_run(
+    async def can_run(
         self,
         command: Union[Bot_Command, str],
         location: Optional[Union[discord.abc.Messageable, discord.Guild]],
@@ -415,7 +415,7 @@ class Bot_Commands:
             if cmd is None:
                 return False
 
-            return cmd.can_run(location, member)
+            return await discord.utils.maybe_coroutine(cmd.can_run, location, member)
         except Exception:
             # If the commands can_run method does not successfully return,
             # assume the command can not be run. This prevents bugs from

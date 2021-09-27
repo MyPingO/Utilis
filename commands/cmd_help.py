@@ -6,16 +6,18 @@ from utils import fmt, std_embed
 from utils.errors import ReportableError
 from utils.paged_message import get_paged_footer, Paged_Message
 
+from main import bot_prefix
+
 
 class Help_Command(Bot_Command):
     name = "help"
 
     short_help = "Gives information about the bot's commands. Specifying what command you need help with by doing `help <command>` will show you more details about that command"
 
-    long_help = """Gives information about the bot's commands.
-    Arguments:
-    `command`
-    `None`
+    long_help = f"""Gives information about the bot's commands.
+    Usage:
+    `{bot_prefix}help` - Get a list of all available commands.
+    `{bot_prefix}help [command]` - Get detailed info for a specific command.
     """
 
     category = Bot_Command_Category.TOOLS
@@ -53,13 +55,13 @@ class Help_Command(Bot_Command):
 
                 return embed
 
-            help_embeds = self.get_help_embeds(msg.channel, msg.author)
+            help_embeds = await self.get_help_embeds(msg.channel, msg.author)
 
             await Paged_Message(
                 help_embeds, msg.author, embed_editor if len(help_embeds) > 1 else None
             ).send(msg.channel)
 
-    def get_help_embeds(
+    async def get_help_embeds(
         self,
         channel: discord.abc.Messageable,
         user: Union[discord.User, discord.Member],
@@ -74,11 +76,11 @@ class Help_Command(Bot_Command):
         }
         if isinstance(channel, discord.abc.GuildChannel):
             for cmd in bot_commands.get_commands_in(channel.guild):
-                if cmd.can_run(channel, user):
+                if await discord.utils.maybe_coroutine(cmd.can_run, channel, user):
                     command_categories[cmd.category].append(cmd)
         else:
             for cmd in bot_commands.get_global_commands():
-                if cmd.can_run(channel, user):
+                if await discord.utils.maybe_coroutine(cmd.can_run, channel, user):
                     command_categories[cmd.category].append(cmd)
 
         ret = []
