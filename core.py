@@ -16,4 +16,4 @@ logging.basicConfig(
     format="%(asctime)s:%(levelname)s:%(name)s: %(message)s",
 )
 
-client = discord.Client()
+client = discord.Client(intents=discord.Intents.all())
