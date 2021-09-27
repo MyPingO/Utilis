@@ -4,6 +4,7 @@ from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from datetime import datetime, timedelta
 from utils import find, fmt, std_embed
 from utils.errors import ReportableError
+from main import bot_prefix
 
 import discord
 import random
@@ -13,18 +14,18 @@ import db
 class Warn_Command(Bot_Command):
     name = "warn"
 
-    short_help = "Warn a member in the server.\n**$warn [username/user id/nickname] [Optional reason]**\nGet the count of warns on a user.\n**$warn count [username/user id/nickname]**"
+    short_help = "Warn a member in the server."
 
-    long_help = """Warns a member in the server or gets the count of warns on a user.
-    Warn Command Syntax:
-    **$warn [member] [Optional reason]**
-    **$warn count [member]**
+    long_help = f"""Warns a member in the server or gets the count of warns on a user.
+    Command Syntax:
+    **{bot_prefix}warn [member] [Optional reason]**
+    **{bot_prefix}warn count [member]**
     
     `member`: *@User, User ID, Nickname* (Not Case Sensitive)
     `Optional reason`: *Text* (Can have spaces)
 
     ~Example: (Assume this is the same user)
-    **$warn TheLegend47** or **$warn [1234567891012345678]** or **$warn Legend** """
+    **{bot_prefix}warn TheLegend47** or **{bot_prefix}warn 1234567891012345678** or **{bot_prefix}warn Legend** """
 
     category = Bot_Command_Category.MODERATION
 
@@ -233,7 +234,7 @@ class Warn_Command(Bot_Command):
                         author = msg.author
                     )
                     await std_embed.send_info(
-                        msg.channel, title = "**Notice:** This user has been warned over 3 times on this server.", author = msg.author
+                        msg.channel, title = "Notice: This user has been warned over 3 times on this server.", author = msg.author
                     )
                     await mute.mute(
                         m=member,
