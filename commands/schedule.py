@@ -28,9 +28,6 @@ class Schedule_Command(Bot_Command):
     #discord's global mentions or command-specific keywords
     restricted = ["all", "here", "everyone"]
 
-    #the bot's local time zone
-    tz = datetime.timezone(datetime.timedelta(hours=-4))
-
     #create a table in the database to store events if it doesn't exist
     def __init__(self):
         db.execute("""CREATE TABLE IF NOT EXISTS schedule (
@@ -136,7 +133,7 @@ class Schedule_Command(Bot_Command):
             #combine the date and time to get a datetime object
             dt = datetime.datetime.combine(date, time)
             #make sure the time is in the future
-            if dt.astimezone(tz=self.tz) < datetime.datetime.now(tz=self.tz):
+            if dt.astimezone() < datetime.datetime.now().astimezone():
                 error_embed.description = "This time has already passed."
                 await channel.send(embed=error_embed)
                 return
@@ -150,7 +147,7 @@ class Schedule_Command(Bot_Command):
                 description=f"React to this message to be pinged for {role.mention} on **<t:{int(dt.timestamp())}:F>**!"
             )
 
-            #create a dictionary of the event details
+            #create a tuple of the event details
             event = (
                 title,
                 dt,
@@ -339,28 +336,31 @@ class Schedule_Command(Bot_Command):
         operation = "INSERT INTO schedule VALUES (%s, %s, %s, %s, %s, %s, %s, %s);"
         params = (guild.id, event[0], dt, year, month, message.id, role.id, member.id)
         db.execute(operation, params)
-        #sleep until 5 minutes before the event to notify participants ahead of time
-        await discord.utils.sleep_until(dt.astimezone(tz=self.tz) - datetime.timedelta(minutes=5))
 
-        #verify this event still exists
-        if self.get_event(event[0], guild.id) is None:
-           return
-
-        #assign all participants the designated role for this event
-        await self.react_for_role(message, role)
-
-        #creates and sends an embed reminder for the event
+        #send reminder message if event is at least 5 minutes in the future
         reminder = discord.Embed(color=discord.Color.blue())
-        reminder.add_field(
-            name="REMINDER",
-            value=f"""**{event[0].upper()}** will be starting soon!
-            You can still join before it starts by reacting to [this message]({message.jump_url})!""",
-            inline=False
-        )
-        m1 = await channel.send(f"{role.mention}", embed=reminder)
+        m1 = None
+        if dt.astimezone() - datetime.timedelta(minutes=5) > datetime.datetime.now().astimezone():
+            await discord.utils.sleep_until(dt.astimezone() - datetime.timedelta(minutes=5))
+
+            #verify this event still exists
+            if self.get_event(event[0], guild.id) is None:
+               return
+
+            #assign all participants the designated role for this event
+            await self.react_for_role(message, role)
+
+            #sends an embed reminder for the event
+            reminder.add_field(
+                name="REMINDER",
+                value=f"""**{event[0].upper()}** will be starting soon!
+                You can still join before it starts by reacting to [this message]({message.jump_url})!""",
+                inline=False
+            )
+            m1 = await channel.send(f"{role.mention}", embed=reminder)
 
         #wait for event to start
-        await discord.utils.sleep_until(dt.astimezone(tz=self.tz))
+        await discord.utils.sleep_until(dt.astimezone())
 
         #check for any last minute participants
         await self.react_for_role(message, role)
@@ -379,10 +379,11 @@ class Schedule_Command(Bot_Command):
 
         event = self.get_event(event[0], guild.id)
         try:
-            #delete the event from the log file
+            #delete the event from the table
             await self.remove(m1, event)
             #removes the deleted role mention from the reminder messages
-            await m1.edit(content=None)
+            if m1:
+                await m1.edit(content=None)
             await m2.edit(content=None)
         except discord.HTTPException as httpe:
             print(httpe)
@@ -618,7 +619,7 @@ class Schedule_Command(Bot_Command):
 
             #make sure new time is in the future
             dt = dt.replace(hour=time.hour, minute=time.minute)
-            if dt.astimezone(tz=self.tz) < datetime.datetime.now(tz=self.tz):
+            if dt.astimezone() < datetime.datetime.now().astimezone():
                 await std_embed.send_error(
                     channel,
                     description=f"This time has already passed. Cancelling all edits to {title}",

@@ -37,7 +37,7 @@ class Unmute_Command(Bot_Command):
         else:
             print("Please specify a user.")
             await std_embed.send_error(
-                channel,
+                msg.channel,
                 title="ERROR",
                 description="**A user was not specified**"
             )

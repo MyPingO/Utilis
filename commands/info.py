@@ -11,7 +11,7 @@ class Info_Command(Bot_Command):
 
     long_help = """Provides more information on various objects.
     __Usage:__
-    **info** *roles|channels|guild*
+    **info** *roles | channels | guild*
     **info role** *role*
     **info user** [*user*]
     """
@@ -69,9 +69,24 @@ class Info_Command(Bot_Command):
                     )
                 await channel.send(embed=embed)
 
-        #TODO
         elif args.casefold().startswith("channels"):
-            pass
+            embed = std_embed.get_info(title=f"{guild.name}'s Channels")
+
+            embed.add_field(name="Categories", value=f"{len(guild.categories)} channels")
+            embed.add_field(name="Voice Channels", value=f"{len(guild.voice_channels)} channels")
+            embed.add_field(name="Text Channels", value=f"{len(guild.text_channels)} channels")
+
+            embed.add_field(name="Rules Channel", value=guild.rules_channel.mention if guild.rules_channel else "None")
+            embed.add_field(name="AFK Channel", value=guild.afk_channel.mention if guild.afk_channel else "None")
+            embed.add_field(name="System Channel", value=guild.system_channel.mention if guild.system_channel else "None")
+
+            news = discord.utils.get(guild.channels, type=discord.ChannelType.news)
+            if news:
+                embed.add_field(name="News Channel", value=news.mention)
+            store = discord.utils.get(guild.channels, type=discord.ChannelType.store)
+            if store:
+                embed.add_field(name="Store Channel", value=store.mention)
+            await channel.send(embed=embed)
 
         #contains all of the above abriefed
         elif args.casefold().startswith("guild"):
@@ -102,11 +117,9 @@ class Info_Command(Bot_Command):
             categories = len(guild.categories)
             embed.add_field(
                 name="Channels",
-                value=f"""
-                {len(guild.channels)}: {str(categories)+' categories' if categories != 1 else str(categories)+' category'},
-                {str(text_channels)+' text channels' if text_channels != 1 else str(text_channels)+' text channel'},
-                {str(voice_channels)+' voice channels' if voice_channels != 1 else str(voice_channels)+' voice channel'}
-                """,
+                value=f"{len(guild.channels)}: {str(categories)+' categories' if categories != 1 else str(categories)+' category'},\n"
+                f"{str(text_channels)+' text channels' if text_channels != 1 else str(text_channels)+' text channel'},\n"
+                f"{str(voice_channels)+' voice channels' if voice_channels != 1 else str(voice_channels)+' voice channel'}",
                 inline=True
             )
             embed.add_field(
@@ -159,10 +172,8 @@ class Info_Command(Bot_Command):
                 )
                 embed.add_field(
                     name="Permissions",
-                    value=f"""
-                    {'Server Owner' if user == guild.owner else ''}
-                    {'Server Admin' if user.guild_permissions.administrator else ''}
-                    """,
+                    value=f"{'Server Owner' if user == guild.owner else ''}\n"
+                    f"{'Server Admin' if user.guild_permissions.administrator else ''}",
                     inline=True
                 )
                 await channel.send(embed=embed)

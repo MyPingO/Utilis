@@ -27,12 +27,12 @@ class Random_Command(Bot_Command):
             arg1, arg2 = sorted((int(m.group(1)), int(m.group(2))))
             # requires user to enter a valid range
             if arg1 == arg2:
-                await std_embed.send_error(channel, description="Please enter two different numbers")
+                await std_embed.send_error(msg.channel, description="Please enter two different numbers")
                 return
-            await std_embed.send_info(channel, description=random.randint(arg1, arg2))
+            await std_embed.send_info(msg.channel, description=random.randint(arg1, arg2))
 
         else:
-            await std_embed.send_error(channel, description="Must enter 2 integer value arguments")
+            await std_embed.send_error(msg.channel, description="Must enter 2 integer value arguments")
 
 
 bot_commands.add_command(Random_Command())
