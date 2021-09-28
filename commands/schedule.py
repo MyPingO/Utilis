@@ -380,7 +380,7 @@ class Schedule_Command(Bot_Command):
         event = self.get_event(event[0], guild.id)
         try:
             #delete the event from the table
-            await self.remove(m1, event)
+            await self.remove(m2, event)
             #removes the deleted role mention from the reminder messages
             if m1:
                 await m1.edit(content=None)
