@@ -1,4 +1,5 @@
 from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
+from utils import std_embed
 
 import discord
 import random
@@ -7,7 +8,7 @@ import random
 class Coin_Flip_Command(Bot_Command):
     name = "coinflip"
 
-    coin = ["heads", "tails"]
+    coin = ["Heads!", "Tails!"]
 
     short_help = "Flips a coin"
 
@@ -17,9 +18,12 @@ class Coin_Flip_Command(Bot_Command):
     """
 
     async def run(self, msg: discord.Message, args: str):
-        choice = f"{random.choice(self.coin)}"
-        print(choice)
-        await msg.channel.send(choice)
+        await std_embed.send_info(
+            msg.channel,
+            title="Coinflip",
+            description=random.choice(coin),
+            author=msg.author,
+        )
 
 
 bot_commands.add_command(Coin_Flip_Command())
