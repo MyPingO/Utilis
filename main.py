@@ -184,15 +184,6 @@ async def on_message(msg: discord.Message):
                         ),
                         author=msg.author,
                     )
-        # assigning roles
-        # only if message is in designated role channel
-        elif msg.channel.id == 846427205911052349:
-            # deletes messages sent in designated role channel after a delay
-            await msg.delete(delay=5)
-            # if message has prefix, call roles
-            if msg.content.startswith("+") or msg.content.startswith("-"):
-                # assign role
-                await assign_roles(msg)
 
 
 # allows members to pin messages on their own by reaching a reaction goal

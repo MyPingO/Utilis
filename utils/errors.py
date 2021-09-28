@@ -37,5 +37,9 @@ class UserCancelError(UserInputError):
     """An error relating to a user cancelling an input prompt."""
 
 
-class ParseError(UserInputError):
+class InvalidInputError(UserInputError):
+    """An error relating to a user giving an invalid input."""
+
+
+class ParseError(InvalidInputError):
     """An error relating to not being able to parse user input."""

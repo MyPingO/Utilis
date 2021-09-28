@@ -1,6 +1,7 @@
 import discord
 import re
 import string
+import traceback
 from typing import Any, Mapping, Optional, Sequence, Union
 
 
@@ -390,3 +391,10 @@ def get_user_log(
 
     log_msg += f" {action}"
     return log_msg
+
+
+def format_error(e: Exception) -> str:
+    return (
+        f"{type(e).__name__}: {e}\n"
+        + "".join(traceback.format_exception(None, e, e.__traceback__))
+    ).strip("\n") + "\n"

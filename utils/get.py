@@ -27,7 +27,7 @@ async def reply(
     message: Optional[discord.Message] = None,
     timeout: Optional[float] = 60,
     error_message: Optional[str] = None,
-) -> str:
+) -> discord.Message:
     """Waits for a reply from `member` by getting their next message sent
     in `channel` and returns it. Waiting for a response is cancelled and
     raises an error if `member` reacts to `message` with ❌.
@@ -109,6 +109,7 @@ async def confirmation(
     timeout: Optional[float] = 60,
     delete_after: bool = False,
     error_message: Optional[str] = "Error: You took too long to respond",
+    timeout_returns_false: bool = True,
 ) -> bool:
     """Sends an embed to the passed channel, requesting a reaction confirmation.
 
@@ -139,8 +140,14 @@ async def confirmation(
     Determines whether or not to delete the message requesting confirmation.
 
     error_message: Optional[str]
-    The message sent to `channel` if the function times out waiting for a user event.
+    If `timeout_returns_false` is `True`, `error_message` wil be sent to
+    `channel` if the function times out waiting for a user event. If
+    `timeout_returns_false` is `False`, after timing out a `UserTimeoutError`
+    will be raised with `error_message` as the argument.
 
+    timeout_returns_false: bool
+    If `True`, the function will return `False` after timing out waiting for
+    user input. If `False`, a `UserTimeoutError` will be raised instead.
     """
 
     confirm_emoji = "✅"
@@ -169,13 +176,19 @@ async def confirmation(
             return True
         return False
     except asyncio.TimeoutError:
-        if error_message is not None:
-            await std_embed.send_error(
-                channel, description=error_message, author=member
-            )
         if delete_after:
             await msg.delete()
-        return False
+        if timeout_returns_false:
+            if error_message is not None:
+                await std_embed.send_error(
+                    channel, description=error_message, author=member
+                )
+            return False
+        else:
+            if error_message is not None:
+                raise errors.UserTimeoutError(error_message)
+            else:
+                raise errors.UserTimeoutError()
 
 
 class User_Selection_Message(Paged_Message, Generic[_T]):

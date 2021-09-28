@@ -4,12 +4,11 @@ from utils.errors import ReportableError, UserCancelError
 
 import discord
 import logging
-import traceback
 from pathlib import Path
 from enum import Enum
 from importlib import import_module
 from abc import ABC, abstractmethod
-from typing import Union, Optional
+from typing import ClassVar, Optional, Union
 
 
 # A Union of different types that can be used to represent a guild
@@ -52,7 +51,7 @@ class Bot_Command(ABC):
     long_help: str = "No information available for this command."
     aliases: list[str] = []
     category: Bot_Command_Category = Bot_Command_Category.NONE
-    log: logging.Logger
+    log: ClassVar[logging.Logger]
 
     def __init_subclass__(cls) -> None:
         cls.log = logging.getLogger(f"commands.{cls.name}")
@@ -438,18 +437,18 @@ class Bot_Commands:
             await command.run(msg, args)
         except UserCancelError as e:
             if e.log:
-                self.log_error(command, e)
+                command.log.error(fmt.format_error(e))
             await self.send_cancel_message(msg.channel, command, str(e), msg.author)
             if e.log:
                 raise e
         except ReportableError as e:
             if e.log:
-                self.log_error(command, e)
+                command.log.error(fmt.format_error(e))
             await self.send_error_message(msg.channel, command, str(e), msg.author)
             if e.log:
                 raise e
         except Exception as e:
-            self.log_error(command, e)
+            command.log.error(fmt.format_error(e))
             await self.send_error_message(
                 msg.channel,
                 command,
@@ -459,13 +458,6 @@ class Bot_Commands:
                 msg.author,
             )
             raise e
-
-    def log_error(self, command: Bot_Command, e: Exception) -> None:
-        """Logs an error raised while executing a command."""
-        command.log.error(
-            f"{type(e).__name__}: {e}\n"
-            + "".join(traceback.format_exception(None, e, e.__traceback__))
-        )
 
     async def send_error_message(
         self,
