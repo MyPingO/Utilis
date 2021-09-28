@@ -21,7 +21,7 @@ class Coin_Flip_Command(Bot_Command):
         await std_embed.send_info(
             msg.channel,
             title="Coinflip",
-            description=random.choice(coin),
+            description=random.choice(self.coin),
             author=msg.author,
         )
 
