@@ -7,7 +7,7 @@ from utils import errors, get, std_embed
 _max_log_history = len(get.User_Selection_Message.default_selection_reactions)
 
 
-class Logout_Command(Bot_Command):
+class Logs_Command(Bot_Command):
     name = "logs"
     aliases = ["log"]
     short_help = "Downloads the bot's logs."
@@ -66,4 +66,4 @@ class Logout_Command(Bot_Command):
         )
 
 
-bot_commands.add_command(Logout_Command())
+bot_commands.add_command(Logs_Command())
