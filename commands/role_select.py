@@ -540,20 +540,25 @@ class Role_Select_Command(Bot_Command):
         channel: discord.TextChannel,
         responder: discord.Member,
         title: str,
-        description: str,
+        description_prompt: str,
     ) -> discord.TextChannel:
-        channel_list = [
-            c for c in channel.guild.channels if isinstance(c, discord.TextChannel)
-        ]
-        channel_list.sort(key=lambda c: (c.id != channel.id, c.position))
-        return await get.selection(
-            channel,
-            channel_list,
-            lambda c: c.mention,
-            responder,
-            title,
-            description,
+        description = f"{description_prompt}, or react with ❌ to cancel"
+        message = await std_embed.send_input(
+            channel, title=title, description=description, author=responder
         )
+        while True:
+            get_channel_name = (await get.reply(responder, channel, message)).content
+            get_channel = await find.channel(channel, get_channel_name, responder)
+            if get_channel is not None:
+                return get_channel
+            message = await std_embed.send_reinput(
+                channel,
+                title=title,
+                description=fmt.format_maxlen(
+                    "Could not find channel `{}`" f". {description}", get_channel_name
+                ),
+                author=responder,
+            )
 
     async def _get_roles(
         self,
