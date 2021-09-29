@@ -1,5 +1,4 @@
 import discord
-import asyncio
 from core import client
 from bot_cmd import Bot_Command, bot_commands, Bot_Command_Category
 from utils import std_embed

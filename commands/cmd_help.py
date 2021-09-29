@@ -182,7 +182,7 @@ class Help_Command(Bot_Command):
             )
 
         # Make sure the user can run the command
-        if not cmd.can_run(channel, user):
+        if not await discord.utils.maybe_coroutine(cmd.can_run, channel, user):
             raise ReportableError(
                 fmt.format_maxlen(
                     "You do not have permission to run `{}` here", cmd.name
