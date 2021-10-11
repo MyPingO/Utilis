@@ -432,7 +432,7 @@ class Role_Select_Command(Bot_Command):
                 # Remove invalid reactions
                 channel = client.get_channel(payload.channel_id)
                 message = channel.get_partial_message(payload.message_id)
-                await message.remove_reaction(payload.emoji, member)
+                await message.remove_reaction(payload.emoji, payload.member)
             return
 
         emoji = str(payload.emoji)
@@ -457,7 +457,7 @@ class Role_Select_Command(Bot_Command):
                 # Remove invalid reactions
                 channel = client.get_channel(payload.channel_id)
                 message = channel.get_partial_message(payload.message_id)
-                await message.remove_reaction(payload.emoji, member)
+                await message.remove_reaction(payload.emoji, payload.member)
             return
 
         # Handle valid reactions
