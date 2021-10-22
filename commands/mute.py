@@ -3,8 +3,8 @@ from utils import find, std_embed
 from commands.unmute import unmute
 from typing import Optional, Union
 from utils.parse import re_duration, str_to_timedelta
+from datetime import datetime, timezone
 
-import datetime
 import discord
 import asyncio
 import re
@@ -24,9 +24,6 @@ class Mute_Command(Bot_Command):
     """
 
     category = Bot_Command_Category.TOOLS
-
-    #the bot's local timezone
-    tz = datetime.timezone(datetime.timedelta(hours=-4))
 
     #ensures log file exists and self.muted contains its contents
     def __init__(self):
@@ -204,7 +201,7 @@ class Mute_Command(Bot_Command):
             return self.split_args(f"{parsed_args[0]} {self.default_time}")
         duration_td = str_to_timedelta(duration.group(0))
 
-        parsed_args.append((datetime.datetime.now() + duration_td).replace(microsecond=0))
+        parsed_args.append((datetime.now() + duration_td).replace(microsecond=0))
         return parsed_args
 
 
@@ -215,7 +212,7 @@ class Mute_Command(Bot_Command):
     async def mute(
             self,
             channel: discord.TextChannel,
-            unmute_at: datetime.datetime,
+            unmute_at: datetime,
             author: discord.Member,
             m: Optional[Union[discord.Member, str]] = None,
         ):
@@ -226,7 +223,7 @@ class Mute_Command(Bot_Command):
         channel: discord.TextChannel
         The channel to send the mute information to.
 
-        unmute_at: datetime.datetime
+        unmute_at: datetime
         A datetime object specifying when the
         member or server should be unmuted.
 
@@ -258,7 +255,7 @@ class Mute_Command(Bot_Command):
                 author=author
             )
             #wait until the time to unmute the server
-            await discord.utils.sleep_until(unmute_at.astimezone(tz=self.tz))
+            await discord.utils.sleep_until(unmute_at.astimezone())
             if self.compare_time(channel.guild):
                 await unmute.unmute(channel, channel.guild, author)
                 print(f"Server [#{channel.guild.id}: {channel.guild.name}] is unmuted")
@@ -293,7 +290,7 @@ class Mute_Command(Bot_Command):
             )
 
             #wait until the time to unmute the member
-            await discord.utils.sleep_until(unmute_at.astimezone(tz=self.tz))
+            await discord.utils.sleep_until(unmute_at.astimezone())
             #check if member is logged and due to be unmuted
             if self.compare_time(channel.guild, m):
                 operation = "SELECT * FROM mute WHERE Server = %s AND Member = %s;"
@@ -330,7 +327,7 @@ class Mute_Command(Bot_Command):
             dt = dt[0][0]
             print(f"dt: {dt}")
             #parse the string to a datetime object and compare it to the current time
-            return dt < datetime.datetime.now()
+            return dt.astimezone(timezone.utc) < datetime.now().astimezone(timezone.utc)
         return False
 
 
